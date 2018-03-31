@@ -236,7 +236,12 @@ fi
 TESTED_HASH=a0c6a1d
 if [ ! -d "vlc" ]; then
     diagnostic "VLC source not found, cloning"
-    git clone https://git.videolan.org/git/vlc/vlc-3.0.git vlc
+    #git clone https://git.videolan.org/git/vlc/vlc-3.0.git vlc
+    git clone https://github.com/leonxun/vlc-3.0.git vlc
+	cd vlc
+	git checkout maxwall-4.0.x
+	git pull
+	cd ../
     checkfail "vlc source: git clone failed"
 fi
 diagnostic "VLC source found"
@@ -249,9 +254,9 @@ if ! git cat-file -e ${TESTED_HASH}; then
 EOF
     exit 1
 fi
-if [ "$RELEASE" = 1 ]; then
-    git reset --hard ${TESTED_HASH}
-fi
+#if [ "$RELEASE" = 1 ]; then
+#    git reset --hard ${TESTED_HASH}
+#fi
 cd ..
 
 
