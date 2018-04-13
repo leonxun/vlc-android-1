@@ -760,10 +760,14 @@ public class Media extends VLCObject<Media.Event> {
          * for 320x170 H.264, a few packets less on higher resolutions.
          * On Nexus S, the decoder latency seems to be about 7 packets.
          */
-        if (!mFileCachingSet)
-            addOption(":file-caching=1500");
-        if (!mNetworkCachingSet)
-            addOption(":network-caching=1500");
+        if (!mFileCachingSet) {
+            //addOption(":file-caching=1500");  - leon  reduce cache to 100 for maxwall
+            addOption(":file-caching=100");
+        }
+        if (!mNetworkCachingSet) {
+            //addOption(":network-caching=100"); - leon  reduce cache to 100 for maxwall
+            addOption(":network-caching=100");
+        }
 
         final StringBuilder sb = new StringBuilder(":codec=");
         if (decoder == HWDecoderUtil.Decoder.MEDIACODEC || decoder == HWDecoderUtil.Decoder.ALL)
