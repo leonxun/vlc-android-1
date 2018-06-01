@@ -23,8 +23,10 @@
 
 package org.videolan.vlc;
 
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.provider.MediaStore;
@@ -35,7 +37,6 @@ import org.videolan.vlc.gui.MainActivity;
 import org.videolan.vlc.gui.SearchActivity;
 import org.videolan.vlc.gui.helpers.hf.StoragePermissionsDelegate;
 import org.videolan.vlc.gui.tv.MainTvActivity;
-import org.videolan.vlc.gui.tv.audioplayer.AudioPlayerActivity;
 import org.videolan.vlc.gui.video.VideoPlayerActivity;
 import org.videolan.vlc.media.MediaUtils;
 import org.videolan.vlc.util.AndroidDevices;
@@ -54,10 +55,19 @@ public class StartActivity extends FragmentActivity implements StoragePermission
         final boolean tv =  showTvUi();
         final String action = intent != null ? intent.getAction(): null;
 
-        if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
-            if (Permissions.checkReadStoragePermission(this, true))
+        if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null
+                && Permissions.checkReadStoragePermission(this, true)) {
                 startPlaybackFromApp(intent);
-            return;
+                return;
+        } else if (Intent.ACTION_SEND.equals(action)) {
+            final ClipData cd = intent.getClipData();
+            final ClipData.Item item = cd != null && cd.getItemCount() > 0 ? cd.getItemAt(0) : null;
+            final String mrl = item != null ? item.getText().toString() : null;
+            if (mrl != null) {
+                MediaUtils.openMediaNoUi(Uri.parse(mrl));
+                finish();
+                return;
+            }
         }
 
         // Start application
@@ -80,8 +90,6 @@ public class StartActivity extends FragmentActivity implements StoragePermission
             final Intent serviceInent = new Intent(Constants.ACTION_PLAY_FROM_SEARCH, null, this, PlaybackService.class)
                     .putExtra(Constants.EXTRA_SEARCH_BUNDLE, intent.getExtras());
             Util.startService(this, serviceInent);
-        } else if (Constants.ACTION_SHOW_PLAYER.equals(action)) {
-            startActivity(new Intent(this, tv ? AudioPlayerActivity.class : MainActivity.class));
         } else {
             startActivity(new Intent(this, tv ? MainTvActivity.class : MainActivity.class)
                     .putExtra(Constants.EXTRA_FIRST_RUN, firstRun)

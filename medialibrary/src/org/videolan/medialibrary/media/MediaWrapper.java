@@ -100,6 +100,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     private String mEncodedBy;
     private String mTrackID;
     private String mArtworkURL;
+    private boolean mThumbnailGenerated;
 
     private final Uri mUri;
     private String mFilename;
@@ -126,10 +127,9 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     public MediaWrapper(long id, String mrl, long time, long length, int type, String title,
                         String artist, String genre, String album, String albumArtist, int width,
                         int height, String artworkURL, int audio, int spu, int trackNumber,
-                        int discNumber, long lastModified, long seen) {
+                        int discNumber, long lastModified, long seen, boolean isThumbnailGenerated) {
         super();
-        if (TextUtils.isEmpty(mrl))
-            throw new IllegalArgumentException("uri was empty");
+        if (TextUtils.isEmpty(mrl)) throw new IllegalArgumentException("uri was empty");
 
         if (mrl.charAt(0) == '/')
             mrl = "file://"+mrl;
@@ -156,6 +156,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
         if (sb.length() > 0)
             mDescription = sb.toString();
         defineType();
+        mThumbnailGenerated = isThumbnailGenerated;
     }
 
     /**
@@ -186,17 +187,17 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
 
     @Override
     public boolean equals(Object obj) {
-        if (this == obj)
-            return true;
+        if (this == obj) return true;
         if (!(obj instanceof MediaLibraryItem) || ((MediaLibraryItem) obj).getItemType() != TYPE_MEDIA)
             return false;
-        long otherId = ((MediaWrapper) obj).getId();
-        if (otherId != 0 && getId() != 0 && otherId == getId())
-            return true;
-        Uri otherUri = ((MediaWrapper) obj).getUri();
-        if (mUri == null || otherUri == null)
-            return false;
-        return mUri == otherUri || mUri.equals(otherUri);
+        return equals((MediaWrapper) obj);
+    }
+
+    public boolean equals(MediaWrapper obj) {
+        long otherId = obj.getId();
+        if (otherId != 0L && getId() != 0L && otherId == getId()) return true;
+        final Uri otherUri = obj.getUri();
+        return !(mUri == null || otherUri == null) && (mUri == otherUri || mUri.equals(otherUri));
     }
 
     private void init(Media media) {
@@ -404,10 +405,10 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     }
 
     public boolean isPodcast() {
-        return mType == TYPE_AUDIO && (TextUtils.isEmpty(mAlbum) && mLength > PODCAST_THRESHOLD)
-                || ("podcast".equalsIgnoreCase(mGenre))
-                || ("audiobooks".equalsIgnoreCase(mGenre))
-                || ("audiobook".equalsIgnoreCase(mGenre));
+        return mType == TYPE_AUDIO && (TextUtils.isEmpty(mAlbum) && mLength > PODCAST_THRESHOLD
+                || "podcast".equalsIgnoreCase(mGenre)
+                || "audiobooks".equalsIgnoreCase(mGenre)
+                || "audiobook".equalsIgnoreCase(mGenre));
     }
 
     public void setType(int type){
@@ -552,6 +553,10 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
         return mArtworkURL;
     }
 
+    public boolean isThumbnailGenerated() {
+        return mThumbnailGenerated;
+    }
+
     public String getArtworkMrl() {
         return mArtworkURL;
     }
@@ -615,10 +620,17 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
         return mId != 0;
     }
 
+    public void setThumbnail(String mrl) {
+        mArtworkURL = mrl;
+        final Medialibrary ml = Medialibrary.getInstance();
+        if (mId != 0 && ml.isInitiated()) nativeSetMediaThumbnail(ml, mId, Tools.encodeVLCMrl(mrl));
+    }
+
     private native long nativeGetMediaLongMetadata(Medialibrary ml, long id, int metaDataType);
     private native String nativeGetMediaStringMetadata(Medialibrary ml, long id, int metaDataType);
     private native void nativeSetMediaStringMetadata(Medialibrary ml, long id, int metaDataType, String metadataValue);
     private native void nativeSetMediaLongMetadata(Medialibrary ml, long id, int metaDataType, long metadataValue);
+    private native void nativeSetMediaThumbnail(Medialibrary ml, long id, String mrl);
 
     @Nullable
     public Media.Slave[] getSlaves() {

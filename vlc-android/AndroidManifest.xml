@@ -5,7 +5,7 @@
     android:installLocation="auto">
 
     <uses-sdk
-        tools:overrideLibrary="android.support.v17.leanback, android.support.v14.preference, android.support.v17.preference" />
+        tools:overrideLibrary="android.support.v17.leanback, android.support.v17.preference" />
 
     <uses-permission android:name="android.permission.READ_LOGS"
         android:maxSdkVersion="18" /> <!-- android:maxSdkVersion="15" -->
@@ -24,6 +24,9 @@
 
     <!-- Launch recommendations service once device is booted -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Audio search on TV -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- normal -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -411,6 +414,11 @@
                 <data android:pathPattern=".*\\.xspf" />
                 <data android:pathPattern=".*\\.XSPF" />
             </intent-filter>
+            <intent-filter android:label="Play with VLC">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
             <!-- Search -->
             <intent-filter>
                 <action android:name="android.intent.action.SEARCH" />
@@ -515,12 +523,9 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_provider_b" />
         </receiver>
-        <receiver android:name=".RemoteControlClientReceiver"
-            android:exported="true"
-            android:process=":main">
+        <receiver android:name="android.support.v4.media.session.MediaButtonReceiver" >
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
-                <action android:name="${applicationId}.remote.PlayPause" />
             </intent-filter>
         </receiver>
 

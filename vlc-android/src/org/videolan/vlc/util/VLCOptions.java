@@ -26,6 +26,7 @@ import android.media.AudioManager;
 import android.os.Build;
 import android.preference.PreferenceManager;
 import android.support.annotation.MainThread;
+import android.text.TextUtils;
 import android.util.Log;
 
 import org.videolan.libvlc.Media;
@@ -40,6 +41,7 @@ import org.videolan.vlc.VLCApplication;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 
 
 public class VLCOptions {
@@ -144,6 +146,12 @@ public class VLCOptions {
         options.add("--sout-chromecast-conversion-quality="+pref.getString("casting_quality", "2"));
         options.add("--sout-keep");
 
+        final String customOptions = pref.getString("custom_libvlc_options", null);
+        if (!TextUtils.isEmpty(customOptions)) {
+            final String optionsArray[] = customOptions.split("\\r?\\n", -1);
+            if (!Util.isArrayEmpty(optionsArray)) Collections.addAll(options, optionsArray);
+        }
+
         return options;
     }
 
@@ -199,7 +207,7 @@ public class VLCOptions {
 
     private static String getResampler() {
         final VLCUtil.MachineSpecs m = VLCUtil.getMachineSpecs();
-        return (m == null || m.processors > 2) ? "soxr" : "ugly";
+        return (m == null || m.processors >= 2) ? "soxr" : "ugly";
     }
 
     public static void setMediaOptions(Media media, Context context, int flags) {
@@ -229,7 +237,7 @@ public class VLCOptions {
         if (!prefs.getBoolean("subtitles_autoload", true)) media.addOption(":sub-language=none");
         if (prefs.getBoolean("media_fast_seek", true)) media.addOption(":input-fast-seek");
 
-        if (RendererDelegate.INSTANCE.getSelectedRenderer() != null) {
+        if (RendererDelegate.INSTANCE.hasRenderer()) {
             media.addOption(":sout-chromecast-audio-passthrough="+prefs.getBoolean("casting_passthrough", true));
             media.addOption(":sout-chromecast-conversion-quality="+prefs.getString("casting_quality", "2"));
         }

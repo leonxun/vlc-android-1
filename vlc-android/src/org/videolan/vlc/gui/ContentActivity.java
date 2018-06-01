@@ -23,12 +23,13 @@
 
 package org.videolan.vlc.gui;
 
+import android.annotation.SuppressLint;
 import android.app.SearchManager;
+import android.arch.lifecycle.Observer;
 import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
-import android.support.v4.view.MenuItemCompat;
 import android.support.v7.widget.SearchView;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -40,19 +41,46 @@ import org.videolan.vlc.RendererDelegate;
 import org.videolan.vlc.gui.audio.AudioBrowserFragment;
 import org.videolan.vlc.gui.audio.EqualizerFragment;
 import org.videolan.vlc.gui.browser.ExtensionBrowser;
-import org.videolan.vlc.gui.browser.SortableFragment;
+import org.videolan.vlc.gui.browser.MediaBrowserFragment;
 import org.videolan.vlc.gui.dialogs.RenderersDialog;
 import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.gui.video.VideoGridFragment;
 import org.videolan.vlc.interfaces.Filterable;
 import org.videolan.vlc.util.AndroidDevices;
+import org.videolan.vlc.util.Util;
 
-public class ContentActivity extends AudioPlayerContainerActivity implements SearchView.OnQueryTextListener, MenuItemCompat.OnActionExpandListener, RendererDelegate.RendererListener, RendererDelegate.RendererPlayer {
+import java.util.List;
+
+@SuppressLint("Registered")
+public class ContentActivity extends AudioPlayerContainerActivity implements SearchView.OnQueryTextListener, MenuItem.OnActionExpandListener {
     public static final String TAG = "VLC/ContentActivity";
 
-    protected Menu mMenu;
     private SearchView mSearchView;
-    private boolean showRenderers = !AndroidDevices.isChromeBook && !RendererDelegate.INSTANCE.getRenderers().isEmpty();
+    private boolean showRenderers = !AndroidDevices.isChromeBook && !Util.isListEmpty(RendererDelegate.INSTANCE.getRenderers().getValue());
+
+    @Override
+    protected void initAudioPlayerContainerActivity() {
+        super.initAudioPlayerContainerActivity();
+        if (!AndroidDevices.isChromeBook && !AndroidDevices.isAndroidTv) {
+            RendererDelegate.INSTANCE.getSelectedRenderer().observe(this, new Observer<RendererItem>() {
+                @Override
+                public void onChanged(@Nullable RendererItem rendererItem) {
+                    final MenuItem item = mToolbar.getMenu().findItem(R.id.ml_menu_renderers);
+                    if (item == null) return;
+                    item.setVisible(showRenderers);
+                    item.setIcon(!RendererDelegate.INSTANCE.hasRenderer() ? R.drawable.ic_am_renderer_normal_w : R.drawable.ic_am_renderer_on_w);
+                }
+            });
+            RendererDelegate.INSTANCE.getRenderers().observe(this, new Observer<List<RendererItem>>() {
+                @Override
+                public void onChanged(@Nullable List<RendererItem> rendererItems) {
+                    showRenderers = !Util.isListEmpty(rendererItems);
+                    final MenuItem item = mToolbar.getMenu().findItem(R.id.ml_menu_renderers);
+                    if (item != null) item.setVisible(showRenderers);
+                }
+            });
+        }
+    }
 
     @Override
     protected void onPostCreate(@Nullable Bundle savedInstanceState) {
@@ -62,7 +90,7 @@ public class ContentActivity extends AudioPlayerContainerActivity implements Sea
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        mMenu = menu;
+        if (AndroidDevices.isAndroidTv) return false;
         if (getSupportFragmentManager().findFragmentById(R.id.fragment_placeholder) instanceof AboutFragment)
             return true;
         getMenuInflater().inflate(R.menu.activity_option, menu);
@@ -71,35 +99,15 @@ public class ContentActivity extends AudioPlayerContainerActivity implements Sea
             menu.findItem(R.id.ml_menu_sortby).setVisible(false);
         }
         if (getCurrentFragment() instanceof Filterable) {
-            MenuItem searchItem = menu.findItem(R.id.ml_menu_filter);
-            mSearchView = (SearchView) MenuItemCompat.getActionView(searchItem);
+            final MenuItem searchItem = menu.findItem(R.id.ml_menu_filter);
+            mSearchView = (SearchView) searchItem.getActionView();
             mSearchView.setQueryHint(getString(R.string.search_list_hint));
             mSearchView.setOnQueryTextListener(this);
-            MenuItemCompat.setOnActionExpandListener(searchItem, this);
-        }
-        else
-            menu.findItem(R.id.ml_menu_filter).setVisible(false);
+            searchItem.setOnActionExpandListener(this);
+        } else menu.findItem(R.id.ml_menu_filter).setVisible(false);
         menu.findItem(R.id.ml_menu_renderers).setVisible(showRenderers);
-        menu.findItem(R.id.ml_menu_renderers).setIcon(RendererDelegate.INSTANCE.getSelectedRenderer() == null ? R.drawable.ic_am_renderer_normal_w : R.drawable.ic_am_renderer_on_w);
+        menu.findItem(R.id.ml_menu_renderers).setIcon(!RendererDelegate.INSTANCE.hasRenderer() ? R.drawable.ic_am_renderer_normal_w : R.drawable.ic_am_renderer_on_w);
         return super.onCreateOptionsMenu(menu);
-    }
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        if (!AndroidDevices.isChromeBook) {
-            RendererDelegate.INSTANCE.addListener(this);
-            RendererDelegate.INSTANCE.addPlayerListener(this);
-        }
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (!AndroidDevices.isChromeBook) {
-            RendererDelegate.INSTANCE.removeListener(this);
-            RendererDelegate.INSTANCE.removePlayerListener(this);
-        }
     }
 
     @Override
@@ -114,11 +122,10 @@ public class ContentActivity extends AudioPlayerContainerActivity implements Sea
                 startActivity(new Intent(Intent.ACTION_SEARCH, null, this, SearchActivity.class));
                 return true;
             case R.id.ml_menu_renderers:
-                if (mService != null && !mService.hasRenderer()
-                        && RendererDelegate.INSTANCE.getRenderers().size() == 1) {
-                    final RendererItem renderer = RendererDelegate.INSTANCE.getRenderers().get(0);
+                if (!RendererDelegate.INSTANCE.hasRenderer()
+                        && RendererDelegate.INSTANCE.getRenderers().getValue().size() == 1) {
+                    final RendererItem renderer = RendererDelegate.INSTANCE.getRenderers().getValue().get(0);
                     RendererDelegate.INSTANCE.selectRenderer(renderer);
-                    mService.setRenderer(renderer);
                     final View v = findViewById(R.id.audio_player_container);
                     if (v != null) UiTools.snacker(v, getString(R.string.casting_connected_renderer, renderer.displayName));
                 } else if (getSupportFragmentManager().findFragmentByTag("renderers") == null)
@@ -133,11 +140,8 @@ public class ContentActivity extends AudioPlayerContainerActivity implements Sea
     public boolean onQueryTextChange(String filterQueryString) {
         final Fragment current = getCurrentFragment();
         if (current instanceof Filterable) {
-            final Filterable filterable = (Filterable) current;
-            if (filterQueryString.length() < 3)
-                filterable.restoreList();
-            else
-                filterable.getFilter().filter(filterQueryString);
+            if (filterQueryString.length() < 3) ((Filterable) current).restoreList();
+            else ((Filterable) current).filter(filterQueryString);
             return true;
         }
         return false;
@@ -178,8 +182,8 @@ public class ContentActivity extends AudioPlayerContainerActivity implements Sea
     protected void makeRoomForSearch(Fragment current, boolean hide) {
         final Menu menu = mToolbar.getMenu();
         menu.findItem(R.id.ml_menu_renderers).setVisible(!hide && showRenderers);
-        if (current instanceof SortableFragment) {
-            menu.findItem(R.id.ml_menu_sortby).setVisible(!hide && ((SortableFragment)current).isSortEnabled());
+        if (current instanceof MediaBrowserFragment) {
+            menu.findItem(R.id.ml_menu_sortby).setVisible(!hide && ((MediaBrowserFragment) current).getProvider().canSortByName());
         }
         if (current instanceof VideoGridFragment || current instanceof AudioBrowserFragment) {
             menu.findItem(R.id.ml_menu_last_playlist).setVisible(!hide);
@@ -187,34 +191,17 @@ public class ContentActivity extends AudioPlayerContainerActivity implements Sea
     }
 
     public void onClick(View v) {
-        if (v.getId() == R.id.searchButton)
-            openSearchActivity();
+        if (v.getId() == R.id.searchButton) openSearchActivity();
     }
 
     public void closeSearchView() {
-        if (mMenu != null) MenuItemCompat.collapseActionView(mMenu.findItem(R.id.ml_menu_filter));
+        if (mToolbar.getMenu() != null) mToolbar.getMenu().findItem(R.id.ml_menu_filter).collapseActionView();
     }
 
     public void restoreCurrentList() {
-        Fragment current = getCurrentFragment();
+        final Fragment current = getCurrentFragment();
         if (current instanceof Filterable) {
             ((Filterable) current).restoreList();
         }
-    }
-
-    @Override
-    public void onRenderersChanged(boolean empty) {
-        if (showRenderers != empty) return;
-        showRenderers = !empty;
-        if (empty && !AndroidDevices.isChromeBook) {
-            RendererDelegate.INSTANCE.selectRenderer(null);
-            if (mService != null) mService.setRenderer(null);
-        }
-        supportInvalidateOptionsMenu();
-    }
-
-    @Override
-    public void onRendererChanged(@Nullable RendererItem renderer) {
-        supportInvalidateOptionsMenu();
     }
 }

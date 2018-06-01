@@ -78,10 +78,9 @@ public class PopupManager implements PlaybackService.Callback, GestureDetector.O
 
     public void removePopup() {
         hideNotification();
-        if (mRootView == null)
-            return;
+        if (mRootView == null) return;
         mService.removeCallback(this);
-        final IVLCVout vlcVout = mService.getVLCVout();
+        final IVLCVout vlcVout = mService.getVout();
         vlcVout.detachViews();
         mRootView.close();
         mRootView = null;
@@ -104,7 +103,7 @@ public class PopupManager implements PlaybackService.Callback, GestureDetector.O
         gestureDetector.setOnDoubleTapListener(this);
         mRootView.setGestureDetector(gestureDetector);
 
-        final IVLCVout vlcVout = mService.getVLCVout();
+        final IVLCVout vlcVout = mService.getVout();
         vlcVout.setVideoView((SurfaceView) mRootView.findViewById(R.id.player_surface));
         vlcVout.addCallback(this);
         vlcVout.attachViews(this);
@@ -164,6 +163,7 @@ public class PopupManager implements PlaybackService.Callback, GestureDetector.O
     @Override
     public void onNewVideoLayout(IVLCVout vlcVout, int width, int height,
                                  int visibleWidth, int visibleHeight, int sarNum, int sarDen) {
+        if (mRootView == null) return;
         int displayW = mRootView.getWidth(), displayH = mRootView.getHeight();
 
         // sanity check
@@ -205,17 +205,11 @@ public class PopupManager implements PlaybackService.Callback, GestureDetector.O
     public void update() {}
 
     @Override
-    public void updateProgress() {}
-
-    @Override
     public void onMediaEvent(Media.Event event) {}
 
     @Override
     public void onMediaPlayerEvent(MediaPlayer.Event event) {
         switch (event.type) {
-            case MediaPlayer.Event.Stopped:
-                removePopup();
-                break;
             case MediaPlayer.Event.Playing:
                 if (!mAlwaysOn)
                     mRootView.setKeepScreenOn(true);

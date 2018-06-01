@@ -34,9 +34,11 @@ import org.videolan.vlc.gui.helpers.AudioUtil;
 import org.videolan.vlc.gui.helpers.FloatingActionButtonBehavior;
 import org.videolan.vlc.gui.preferences.PreferencesActivity;
 import org.videolan.vlc.gui.video.MediaInfoAdapter;
+import org.videolan.vlc.media.MediaUtils;
 import org.videolan.vlc.util.Strings;
 import org.videolan.vlc.util.VLCInstance;
 import org.videolan.vlc.util.WeakHandler;
+import org.videolan.vlc.util.WorkersKt;
 
 import java.io.File;
 import java.util.LinkedList;
@@ -82,13 +84,13 @@ public class InfoActivity extends AudioPlayerContainerActivity implements View.O
                 ? savedInstanceState.getInt(TAG_FAB_VISIBILITY) : -1;
 
         if (!TextUtils.isEmpty(mItem.getArtworkMrl())) {
-            VLCApplication.runBackground(new Runnable() {
+            WorkersKt.runBackground(new Runnable() {
                 @Override
                 public void run() {
                     final Bitmap cover = AudioUtil.readCoverBitmap(Uri.decode(mItem.getArtworkMrl()), 0);
                     if (cover != null) {
                         mBinding.setCover(new BitmapDrawable(InfoActivity.this.getResources(), cover));
-                        VLCApplication.runOnMainThread(new Runnable() {
+                        WorkersKt.runOnMainThread(new Runnable() {
                             @Override
                             public void run() {
                                 ViewCompat.setNestedScrollingEnabled(mBinding.container, true);
@@ -111,7 +113,7 @@ public class InfoActivity extends AudioPlayerContainerActivity implements View.O
             mCheckFileTask = (CheckFileTask) new CheckFileTask().execute();
             mParseTracksTask = (ParseTracksTask) new ParseTracksTask().execute();
         }
-        VLCApplication.runBackground(new Runnable() {
+        WorkersKt.runBackground(new Runnable() {
             @Override
             public void run() {
                 updateMeta();
@@ -184,7 +186,7 @@ public class InfoActivity extends AudioPlayerContainerActivity implements View.O
 
     @Override
     public void onClick(View v) {
-        mService.load(mItem.getTracks(), 0);
+        MediaUtils.openArray(this, mItem.getTracks(), 0);
         finish();
     }
 

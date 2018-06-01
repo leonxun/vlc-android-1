@@ -52,7 +52,7 @@ import org.videolan.libvlc.MediaPlayer;
 import org.videolan.vlc.PlaybackService;
 import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
-import org.videolan.vlc.gui.PlaybackServiceFragment;
+import org.videolan.vlc.gui.PlaybackServiceActivity;
 import org.videolan.vlc.gui.audio.EqualizerFragment;
 import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.gui.video.VideoPlayerActivity;
@@ -72,6 +72,7 @@ public class AdvOptionsDialog extends DialogFragment implements View.OnClickList
     public final static String TAG = "VLC/AdvOptionsDialog";
     public static final String MODE_KEY = "mode";
     public static final String PRIMARY_DISPLAY = "primary_display";
+    public static final String PASSTHROUGH = "passthrough";
     public static final int MODE_VIDEO = 0;
     public static final int MODE_AUDIO = 1;
 
@@ -97,7 +98,8 @@ public class AdvOptionsDialog extends DialogFragment implements View.OnClickList
 
     private Activity mActivity;
     private int mMode = -1;
-    private boolean primary;
+    private boolean mPrimary;
+    private boolean mPassthrough;
 
     AutoFitRecyclerView mRecyclerView;
     private AdvOptionsAdapter mAdapter;
@@ -116,6 +118,7 @@ public class AdvOptionsDialog extends DialogFragment implements View.OnClickList
 
     private TextView mChaptersTitle;
     private int mTextColor;
+    private PlaybackServiceActivity.Helper mHelper;
     private PlaybackService mService;
 
     private IPlaybackSettingsController mPlaybackController;
@@ -132,9 +135,11 @@ public class AdvOptionsDialog extends DialogFragment implements View.OnClickList
         final Bundle args = getArguments();
         if (args != null) {
             mMode = args.containsKey(MODE_KEY) ? args.getInt(MODE_KEY) : MODE_VIDEO;
-            primary = args.containsKey(PRIMARY_DISPLAY) && args.getBoolean(PRIMARY_DISPLAY);
+            mPrimary = args.containsKey(PRIMARY_DISPLAY) && args.getBoolean(PRIMARY_DISPLAY);
+            mPassthrough = args.getBoolean(PASSTHROUGH);
         }
         setStyle(DialogFragment.STYLE_NO_FRAME, 0);
+        mHelper = new PlaybackServiceActivity.Helper(getActivity(), this);
     }
 
     @Override
@@ -527,13 +532,13 @@ public class AdvOptionsDialog extends DialogFragment implements View.OnClickList
     @Override
     public void onStart() {
         super.onStart();
-        PlaybackServiceFragment.registerPlaybackService(this, this);
+        mHelper.onStart();
     }
 
     @Override
     public void onStop() {
         super.onStop();
-        PlaybackServiceFragment.unregisterPlaybackService(this, this);
+        mHelper.onStop();
     }
 
     @Override
@@ -550,11 +555,11 @@ public class AdvOptionsDialog extends DialogFragment implements View.OnClickList
         mAdapter.addOption(new Option(ID_EQUALIZER, R.attr.ic_equalizer_normal_style, getString(R.string.equalizer)));
 
         if (mMode == MODE_VIDEO) {
-            if (primary && !tvUi && mService.getAudioTracksCount() > 0)
+            if (mPrimary && !tvUi && mService.getAudioTracksCount() > 0)
                 mAdapter.addOption(new Option(ID_PLAY_AS_AUDIO, R.attr.ic_playasaudio_on, getString(R.string.play_as_audio)));
             mAdapter.addOption(new Option(ID_SPU_DELAY, R.attr.ic_subtitledelay, getString(R.string.spu_delay)));
             mAdapter.addOption(new Option(ID_AUDIO_DELAY, R.attr.ic_audiodelay, getString(R.string.audio_delay)));
-            if (primary && (!tvUi || AndroidDevices.hasPiP) && !AndroidDevices.isDex(getActivity()))
+            if (mPrimary && (!tvUi || AndroidDevices.hasPiP) && !AndroidDevices.isDex(getActivity()))
                 mAdapter.addOption(new Option(ID_POPUP_VIDEO, R.attr.ic_popup_dim, getString(R.string.popup_playback_title)));
             mAdapter.addOption(new Option(ID_REPEAT, R.attr.ic_repeat, getString(R.string.repeat_title)));
             if (mService.canShuffle())
@@ -569,7 +574,7 @@ public class AdvOptionsDialog extends DialogFragment implements View.OnClickList
         } else {
             mAdapter.addOption(new Option(ID_SAVE_PLAYLIST, R.attr.ic_save, getString(R.string.playlist_save)));
         }
-        if ("0".equals(prefs.getString("aout", "0")))
+        if (mPassthrough && "0".equals(prefs.getString("aout", "0")))
             mAdapter.addOption(new Option(ID_PASSTHROUGH, R.attr.ic_passthrough, getString(R.string.audio_digital_title)));
         setDialogDimensions(large_items);
     }

@@ -21,7 +21,6 @@
 package org.videolan.vlc.util;
 
 import android.annotation.TargetApi;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -37,7 +36,6 @@ import android.view.MotionEvent;
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.vlc.R;
-import org.videolan.vlc.RemoteControlClientReceiver;
 import org.videolan.vlc.VLCApplication;
 
 import java.io.BufferedReader;
@@ -97,7 +95,7 @@ public class AndroidDevices {
         devicesWithoutNavBar.add("HTC One S");
         devicesWithoutNavBar.add("HTC One X");
         devicesWithoutNavBar.add("HTC One XL");
-        hasNavBar = AndroidUtil.isICSOrLater && !devicesWithoutNavBar.contains(android.os.Build.MODEL);
+        hasNavBar = !devicesWithoutNavBar.contains(android.os.Build.MODEL);
         final Context ctx = VLCApplication.getAppContext();
         final PackageManager pm = ctx != null ? ctx.getPackageManager() : null;
         hasTsp = pm == null || pm.hasSystemFeature("android.hardware.touchscreen");
@@ -108,8 +106,7 @@ public class AndroidDevices {
         final TelephonyManager tm = ctx != null ? ((TelephonyManager) ctx.getSystemService(Context.TELEPHONY_SERVICE)) : null;
         isPhone = tm == null || tm.getPhoneType() != TelephonyManager.PHONE_TYPE_NONE;
         // hasCombBar test if device has Combined Bar : only for tablet with Honeycomb or ICS
-        hasCombBar = !AndroidDevices.isPhone && AndroidUtil.isHoneycombOrLater
-                && !AndroidUtil.isJellyBeanMR1OrLater;
+        hasCombBar = !AndroidDevices.isPhone && !AndroidUtil.isJellyBeanMR1OrLater;
     }
 
     public static boolean hasExternalStorage() {
@@ -203,14 +200,6 @@ public class AndroidDevices {
             }
         }
         return 0;
-    }
-
-    public static void setRemoteControlReceiverEnabled(boolean enabled) {
-        VLCApplication.getAppContext().getPackageManager().setComponentEnabledSetting(
-                new ComponentName(VLCApplication.getAppContext(), RemoteControlClientReceiver.class),
-                enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED :
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP);
     }
 
     private static boolean isManufacturerBannedForMediastyleNotifications() {

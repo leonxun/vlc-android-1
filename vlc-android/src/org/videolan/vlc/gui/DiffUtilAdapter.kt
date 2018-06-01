@@ -8,24 +8,20 @@ import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
 import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.newSingleThreadContext
-import kotlinx.coroutines.experimental.withContext
 import java.util.*
 
 abstract class DiffUtilAdapter<D, VH : RecyclerView.ViewHolder> : RecyclerView.Adapter<VH>() {
 
     protected var dataset: List<D> = listOf()
     private set
-    @Volatile private var last = dataset
     private val diffCallback by lazy(LazyThreadSafetyMode.NONE) { createCB() }
-    private val updateActor = actor<List<D>>(newSingleThreadContext("vlc-updater"), capacity = Channel.CONFLATED) {
+    private val updateActor = actor<List<D>>(capacity = Channel.CONFLATED) {
         for (list in channel) internalUpdate(list)
     }
     protected abstract fun onUpdateFinished()
 
     @MainThread
     fun update (list: List<D>) {
-        last = list
         updateActor.offer(list)
     }
 
@@ -33,18 +29,19 @@ abstract class DiffUtilAdapter<D, VH : RecyclerView.ViewHolder> : RecyclerView.A
     private suspend fun internalUpdate(list: List<D>) {
         val finalList = prepareList(list)
         val result = DiffUtil.calculateDiff(diffCallback.apply { update(dataset, finalList) }, detectMoves())
-        withContext(UI) {
+        launch(UI) {
             dataset = finalList
             result.dispatchUpdatesTo(this@DiffUtilAdapter)
             onUpdateFinished()
-        }
+        }.join()
     }
 
     protected open fun prepareList(list: List<D>) : List<D> = ArrayList(list)
 
-    fun peekLast() = last
+    @MainThread
+    fun isEmpty() = dataset.isEmpty()
 
-    fun hasPendingUpdates() = updateActor.isFull
+    open fun getItem(position: Int) = dataset[position]
 
     protected open fun detectMoves() = false
 
