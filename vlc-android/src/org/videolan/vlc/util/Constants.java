@@ -1,7 +1,7 @@
 /*****************************************************************************
  * VideoPlayerActivity.java
  *****************************************************************************
- * Copyright © 2017 VLC authors and VideoLAN
+ * Copyright © 2017-2018 VLC authors and VideoLAN
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,20 @@ public class Constants {
     public static final String EXTRA_FIRST_RUN = "extra_first_run";
     public static final String EXTRA_UPGRADE = "extra_upgrade";
 
+    //UI Navigation
+    public static final String ID_VIDEO = "video";
+    public static final String ID_AUDIO = "audio";
+    public static final String ID_NETWORK = "network";
+    public static final String ID_DIRECTORIES = "directories";
+    public static final String ID_HISTORY = "history";
+    public static final String ID_MRL = "mrl";
+    public static final String ID_PREFERENCES = "preferences";
+    public static final String ID_ABOUT = "about";
+
+    public static final int ACTIVITY_RESULT_PREFERENCES = 1;
+    public static final int ACTIVITY_RESULT_OPEN = 2;
+    public static final int ACTIVITY_RESULT_SECONDARY = 3;
+
     // PlaybackService
     public static final String ACTION_REMOTE_GENERIC =  Strings.buildPkgString("remote.");
     public static final String EXTRA_SEARCH_BUNDLE = ACTION_REMOTE_GENERIC+"extra_search_bundle";
@@ -47,9 +61,6 @@ public class Constants {
     public static final int REPEAT_ONE = 1;
     public static final int REPEAT_ALL = 2;
 
-    // AudioPlayerContainerActivity
-    public static final String ACTION_SHOW_PLAYER = Strings.buildPkgString("gui.ShowPlayer");
-
     // MediaParsingService
     public final static String ACTION_INIT = "medialibrary_init";
     public final static String ACTION_RELOAD = "medialibrary_reload";
@@ -60,12 +71,6 @@ public class Constants {
     public final static String EXTRA_UUID = "extra_uuid";
     public final static String ACTION_RESUME_SCAN = "action_resume_scan";
     public final static String ACTION_PAUSE_SCAN = "action_pause_scan";
-    public final static String ACTION_SERVICE_STARTED = "action_service_started";
-    public final static String ACTION_SERVICE_ENDED = "action_service_ended";
-    public final static String ACTION_NEW_STORAGE = "action_new_storage";
-    public final static String ACTION_PROGRESS = "action_progress";
-    public final static String ACTION_PROGRESS_TEXT = "action_progress_text";
-    public final static String ACTION_PROGRESS_VALUE = "action_progress_value";
 
     // VideoPlayerActivity
     public final static String PLAY_FROM_VIDEOGRID = Strings.buildPkgString("gui.video.PLAY_FROM_VIDEOGRID");
@@ -88,4 +93,37 @@ public class Constants {
 
     // AUDIO category
     public final static String KEY_AUDIO_CURRENT_TAB = "key_audio_current_tab";
+
+    //TV
+    public static final long HEADER_VIDEO = 0L;
+    public static final long HEADER_CATEGORIES = 1L;
+    public static final long HEADER_HISTORY = 2L;
+    public static final long HEADER_NETWORK = 3L;
+    public static final long HEADER_DIRECTORIES = 4L;
+    public static final long HEADER_MISC = 5L;
+    public static final long HEADER_STREAM = 6L;
+    public static final long ID_SETTINGS = 10L;
+    public static final long ID_ABOUT_TV = 11L;
+    public static final long ID_LICENCE = 12L;
+    public static final long CATEGORY_NOW_PLAYING = 20L;
+    public static final long CATEGORY_ARTISTS = 21L;
+    public static final long CATEGORY_ALBUMS = 22L;
+    public static final long CATEGORY_GENRES = 23L;
+    public static final long CATEGORY_SONGS = 24L;
+
+    public static final String AUDIO_CATEGORY = "category";
+    public static final String AUDIO_ITEM = "item";
+    public final static String KEY_GROUP = "key_group";
+
+    // Items updates
+    public final static int UPDATE_SELECTION = 0;
+    public final static int UPDATE_THUMB = 1;
+    public final static int UPDATE_TIME = 2;
+    public final static int UPDATE_SEEN = 3;
+    public final static int UPDATE_DESCRIPTION = 4;
+
+    public static final String KEY_URI = "uri";
+    public static final String SELECTED_ITEM = "selected";
+    public static final String CURRENT_BROWSER_LIST = "CURRENT_BROWSER_LIST";
+    public static final String CURRENT_BROWSER_MAP = "CURRENT_BROWSER_MAP";
 }

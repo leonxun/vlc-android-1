@@ -42,7 +42,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.Toast;
 
-import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.vlc.BuildConfig;
 import org.videolan.vlc.R;
@@ -106,15 +105,13 @@ public class SubtitlesDownloader {
         try {
             languages = Collections.singleton(Locale.getDefault().getISO3Language().toLowerCase());
         } catch (MissingResourceException ignored) {}
-        if (AndroidUtil.isHoneycombOrLater) {
-            languages = VLCApplication.getSettings().getStringSet("languages_download_list", languages);
-        }
+        languages = VLCApplication.getSettings().getStringSet("languages_download_list", languages);
         if (languages == null) { // In case getDefault().getISO3Language() fails
             Toast.makeText(mContext, R.string.subs_dl_lang_fail, Toast.LENGTH_SHORT).show();
             return;
         }
         final List<String> finalLanguages = new ArrayList<>(languages);
-        VLCApplication.runBackground(new Runnable() {
+        WorkersKt.runBackground(new Runnable() {
             @Override
             public void run() {
                 SUBTITLES_DIRECTORY.mkdirs();
@@ -307,7 +304,7 @@ public class SubtitlesDownloader {
             }
         }
         if (mCallback != null)
-            VLCApplication.runOnMainThread(new Runnable() {
+            WorkersKt.runOnMainThread(new Runnable() {
                 @Override
                 public void run() {
                     mCallback.onRequestEnded(!success.isEmpty());
@@ -363,7 +360,7 @@ public class SubtitlesDownloader {
             long fileLength = 0;
             final Uri mediaUri = media.getUri();
             if (firstPass) {
-                if (FileUtils.canWrite(mediaUri)) {
+                if ("file".equals(mediaUri.getScheme())) {
                     File videoFile = new File(mediaUri.getPath());
                     hash = FileUtils.computeHash(videoFile);
                     fileLength = videoFile.length();
@@ -396,7 +393,7 @@ public class SubtitlesDownloader {
 
     private void showSumup(final String displayText) {
         if (mContext == null) return;
-        VLCApplication.runOnMainThread(new Runnable(){
+        WorkersKt.runOnMainThread(new Runnable(){
             public void run() {
                 mSumUpDialog = new AlertDialog.Builder(mContext).setTitle(R.string.dialog_subloader_sumup)
                         .setMessage(displayText)
@@ -479,7 +476,7 @@ public class SubtitlesDownloader {
 
     private void showSnackBar(final String text) {
         if (mContext instanceof AppCompatActivity && !(mContext instanceof VideoPlayerActivity) && !mContext.isFinishing()) {
-            VLCApplication.runOnMainThread(new Runnable() {
+            WorkersKt.runOnMainThread(new Runnable() {
                 @Override
                 public void run() {
                     View v = mContext.findViewById(R.id.fragment_placeholder);
@@ -489,7 +486,7 @@ public class SubtitlesDownloader {
                 }
             });
         } else {
-            VLCApplication.runOnMainThread(new Runnable() {
+            WorkersKt.runOnMainThread(new Runnable() {
                 @Override
                 public void run() {
                     Toast.makeText(VLCApplication.getAppContext(), text, Toast.LENGTH_SHORT).show();

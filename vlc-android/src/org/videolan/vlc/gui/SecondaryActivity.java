@@ -62,23 +62,23 @@ public class SecondaryActivity extends ContentActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.secondary);
+        initAudioPlayerContainerActivity();
 
         final View fph = findViewById(R.id.fragment_placeholder);
         final CoordinatorLayout.LayoutParams params =
                 (CoordinatorLayout.LayoutParams) fph.getLayoutParams();
 
         if (VLCApplication.showTvUi()) {
-            TvUtil.applyOverscanMargin(this);
+            TvUtil.INSTANCE.applyOverscanMargin(this);
             params.topMargin = getResources().getDimensionPixelSize(UiTools.getResourceFromAttribute(this, R.attr.actionBarSize));
         } else
             params.setBehavior(new AppBarLayout.ScrollingViewBehavior());
         fph.requestLayout();
 
-        initAudioPlayerContainerActivity();
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
-        if (getSupportFragmentManager().getFragments() == null) {
-            String fragmentId = getIntent().getStringExtra(KEY_FRAGMENT);
+        if (getSupportFragmentManager().findFragmentById(R.id.fragment_placeholder) == null) {
+            final String fragmentId = getIntent().getStringExtra(KEY_FRAGMENT);
             fetchSecondaryFragment(fragmentId);
             if (mFragment == null){
                 finish();

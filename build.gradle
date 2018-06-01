@@ -1,7 +1,7 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
-    ext.android_plugin_version = '3.0.1'
-    ext.kotlin_version = '1.2.21'
+    ext.android_plugin_version = '3.1.2'
+    ext.kotlin_version = '1.2.41'
     ext.kotlinx_version = '0.22.2'
     repositories {
         flatDir dirs: "gradle/plugins"
@@ -24,14 +24,14 @@ allprojects {
 }
 
 ext {
-    appCompatVersion = '25.2.0'
-    constraintLayoutVersion = '1.1.0-beta6'
-    buildToolsVersion = "27.0.2"
+    appCompatVersion = '27.1.1'
+    constraintLayoutVersion = '1.1.0'
+    archVersion = '1.1.1'
     compileSdkVersion = 26
-    minSdkVersion = 9
+    minSdkVersion = 14
     targetSdkVersion = 26
-    versionName = '3.0.5'
-    versionCode = 3000500
+    versionName = '3.0.10'
+    versionCode = 3001000
 //    versionCode scheme is T M NN RR AA
 //    T: Target/Flavour (1 for Android, 2 for Chrome?)
 //    M: Major version from 0 to 9

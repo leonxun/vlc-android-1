@@ -59,6 +59,8 @@ import android.view.DragEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.view.animation.Animation;
 import android.view.animation.AnimationSet;
 import android.view.animation.DecelerateInterpolator;
@@ -68,19 +70,19 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import org.videolan.libvlc.util.AndroidUtil;
+import org.videolan.medialibrary.Medialibrary;
 import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.vlc.BuildConfig;
 import org.videolan.vlc.MediaParsingService;
 import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
-import org.videolan.vlc.gui.audio.BaseAudioBrowser;
-import org.videolan.vlc.gui.browser.SortableFragment;
+import org.videolan.vlc.gui.browser.MediaBrowserFragment;
 import org.videolan.vlc.gui.dialogs.SavePlaylistDialog;
 import org.videolan.vlc.media.MediaUtils;
 import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.FileUtils;
-import org.videolan.vlc.util.MediaLibraryItemComparator;
+import org.videolan.vlc.viewmodels.BaseModel;
 
 import java.util.List;
 
@@ -88,9 +90,15 @@ public class UiTools {
     private static final String TAG = "VLC/UiTools";
 
     public static class Resources {
+        private static final Bitmap DEFAULT_COVER_VIDEO = BitmapCache.getFromResource(VLCApplication.getAppResources(), R.drawable.ic_no_thumbnail_1610);
+        private static final Bitmap DEFAULT_COVER_AUDIO = BitmapCache.getFromResource(VLCApplication.getAppResources(), R.drawable.ic_no_song);
         public static final int ITEM_FOCUS_OFF = ContextCompat.getColor(VLCApplication.getAppContext(), R.color.transparent);
         public static final int ITEM_FOCUS_ON = ContextCompat.getColor(VLCApplication.getAppContext(), R.color.orange500transparent);
         public static final int ITEM_SELECTION_ON = ContextCompat.getColor(VLCApplication.getAppContext(), R.color.orange200transparent);
+        public static final BitmapDrawable DEFAULT_COVER_ARTIST_DRAWABLE = new BitmapDrawable(VLCApplication.getAppResources(), BitmapCache.getFromResource(VLCApplication.getAppResources(), R.drawable.ic_no_artist));
+        public static final BitmapDrawable DEFAULT_COVER_ALBUM_DRAWABLE = new BitmapDrawable(VLCApplication.getAppResources(), BitmapCache.getFromResource(VLCApplication.getAppResources(), R.drawable.ic_no_album));
+        public static final BitmapDrawable DEFAULT_COVER_VIDEO_DRAWABLE = new BitmapDrawable(VLCApplication.getAppResources(), DEFAULT_COVER_VIDEO);
+        public static final BitmapDrawable DEFAULT_COVER_AUDIO_DRAWABLE = new BitmapDrawable(VLCApplication.getAppResources(), DEFAULT_COVER_AUDIO);
     }
 
     private static final Handler sHandler = new Handler(Looper.getMainLooper());
@@ -186,8 +194,11 @@ public class UiTools {
     }
 
     public static void setViewVisibility(View v, int visibility) {
-        if (v != null)
-            v.setVisibility(visibility);
+        if (v != null) v.setVisibility(visibility);
+    }
+
+    public static void setViewOnClickListener(View v, View.OnClickListener ocl) {
+        if (v != null) v.setOnClickListener(ocl);
     }
 
     public static boolean isBlackThemeEnabled() {
@@ -262,14 +273,14 @@ public class UiTools {
     public static BitmapDrawable getDefaultCover(MediaLibraryItem item) {
         switch (item.getItemType()) {
             case MediaLibraryItem.TYPE_ARTIST:
-                return AsyncImageLoader.DEFAULT_COVER_ARTIST_DRAWABLE;
+                return Resources.DEFAULT_COVER_ARTIST_DRAWABLE;
             case MediaLibraryItem.TYPE_ALBUM:
-                return AsyncImageLoader.DEFAULT_COVER_ALBUM_DRAWABLE;
+                return Resources.DEFAULT_COVER_ALBUM_DRAWABLE;
             case MediaLibraryItem.TYPE_MEDIA:
                 if (((MediaWrapper)item).getType() == MediaWrapper.TYPE_VIDEO)
-                    return AsyncImageLoader.DEFAULT_COVER_VIDEO_DRAWABLE;
+                    return Resources.DEFAULT_COVER_VIDEO_DRAWABLE;
             default:
-                return AsyncImageLoader.DEFAULT_COVER_AUDIO_DRAWABLE;
+                return Resources.DEFAULT_COVER_AUDIO_DRAWABLE;
         }
     }
 
@@ -313,69 +324,27 @@ public class UiTools {
         return outBitmap;
     }
 
-    public static void updateSortTitles(SortableFragment sortable, Menu menu) {
+    public static void updateSortTitles(MediaBrowserFragment sortable) {
+        final Menu menu = sortable.getMenu();
+        if (menu == null) return;
+        final BaseModel model = sortable.getProvider();
+        final int sort = model.getSort();
+        final boolean desc = model.getDesc();
         MenuItem item = menu.findItem(R.id.ml_menu_sortby_name);
-        if (item != null) {
-            if (sortable.sortDirection(MediaLibraryItemComparator.SORT_BY_TITLE) == 1
-                    || (sortable.getSortBy() == MediaLibraryItemComparator.SORT_DEFAULT
-                    && sortable.getDefaultSort() == MediaLibraryItemComparator.SORT_BY_TITLE))
-                item.setTitle(R.string.sortby_name_desc);
-            else
-                item.setTitle(R.string.sortby_name);
-        }
-
-        if (sortable instanceof BaseAudioBrowser && sortable.sortDirection(MediaLibraryItemComparator.SORT_DEFAULT) == 1) {
-            int defaultSortby = ((BaseAudioBrowser)sortable).getCurrentAdapter().getDefaultSort();
-            int defaultDirection = ((BaseAudioBrowser)sortable).getCurrentAdapter().getDefaultDirection();
-            menu.findItem(R.id.ml_menu_sortby_length).setTitle(R.string.sortby_length);
-            menu.findItem(R.id.ml_menu_sortby_number).setTitle(R.string.sortby_number);
-            menu.findItem(R.id.ml_menu_sortby_artist_name).setTitle(R.string.sortby_artist_name);
-            menu.findItem(R.id.ml_menu_sortby_name).setTitle(defaultSortby == MediaLibraryItemComparator.SORT_BY_TITLE && defaultDirection == 1
-                    ? R.string.sortby_name_desc
-                    : R.string.sortby_name);
-            menu.findItem(R.id.ml_menu_sortby_date).setTitle(defaultSortby == MediaLibraryItemComparator.SORT_BY_DATE && defaultDirection == 1
-                    ? R.string.sortby_date_desc
-                    : R.string.sortby_date);
-            menu.findItem(R.id.ml_menu_sortby_album_name).setTitle(defaultSortby == MediaLibraryItemComparator.SORT_BY_ALBUM && defaultDirection == 1
-                    ? R.string.sortby_album_name_desc
-                    : R.string.sortby_album_name);
-            return;
-        }
+        if (item != null) item.setTitle(sort == Medialibrary.SORT_ALPHA && !desc ? R.string.sortby_name_desc : R.string.sortby_name);
+        item = menu.findItem(R.id.ml_menu_sortby_filename);
+        if (item != null) item.setTitle(sort == Medialibrary.SORT_FILENAME && !desc ? R.string.sortby_filename_desc : R.string.sortby_filename);
         item = menu.findItem(R.id.ml_menu_sortby_artist_name);
-        if (item != null) {
-            if (sortable.sortDirection(MediaLibraryItemComparator.SORT_BY_ARTIST) == 1)
-                item.setTitle(R.string.sortby_artist_name_desc);
-            else
-                item.setTitle(R.string.sortby_artist_name);
-        }
+        if (item != null) item.setTitle(sort == Medialibrary.SORT_ARTIST && !desc ? R.string.sortby_artist_name_desc : R.string.sortby_artist_name);
         item = menu.findItem(R.id.ml_menu_sortby_album_name);
-        if (item != null) {
-            if (sortable.sortDirection(MediaLibraryItemComparator.SORT_BY_ALBUM) == 1)
-                item.setTitle(R.string.sortby_album_name_desc);
-            else
-                item.setTitle(R.string.sortby_album_name);
-        }
+        if (item != null) item.setTitle(sort == Medialibrary.SORT_ALBUM && !desc ? R.string.sortby_album_name_desc : R.string.sortby_album_name);
         item = menu.findItem(R.id.ml_menu_sortby_length);
-        if (item != null) {
-            if (sortable.sortDirection(MediaLibraryItemComparator.SORT_BY_LENGTH) == 1)
-                item.setTitle(R.string.sortby_length_desc);
-            else
-                item.setTitle(R.string.sortby_length);
-        }
+        if (item != null) item.setTitle(sort == Medialibrary.SORT_DURATION && !desc ? R.string.sortby_length_desc : R.string.sortby_length);
         item = menu.findItem(R.id.ml_menu_sortby_date);
-        if (item != null) {
-            if(sortable.sortDirection(MediaLibraryItemComparator.SORT_BY_DATE) == 1)
-                item.setTitle(R.string.sortby_date_desc);
-            else
-                item.setTitle(R.string.sortby_date);
-        }
-        item = menu.findItem(R.id.ml_menu_sortby_number);
-        if (item != null) {
-            if (sortable.sortDirection(MediaLibraryItemComparator.SORT_BY_NUMBER) == 1)
-                item.setTitle(R.string.sortby_number_desc);
-            else
-                item.setTitle(R.string.sortby_number);
-        }
+        if (item != null) item.setTitle(sort == Medialibrary.SORT_RELEASEDATE && !desc ? R.string.sortby_date_desc : R.string.sortby_date);
+//        item = menu.findItem(R.id.ml_menu_sortby_number); TODO sort by track number
+//        if (item != null) item.setTitle(sort == Medialibrary.SORT_ && !desc ? R.string.sortby_number_desc : R.string.sortby_number);
+
     }
 
     public static void confirmExit(final Activity activity) {
@@ -478,5 +447,14 @@ public class UiTools {
                 }
             }
         });
+    }
+
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
+    public static void setRotationAnimation(Activity activity) {
+        if (!AndroidUtil.isJellyBeanMR2OrLater) return;
+        final Window win = activity.getWindow();
+        final WindowManager.LayoutParams winParams = win.getAttributes();
+        winParams.rotationAnimation = AndroidUtil.isOOrLater ? WindowManager.LayoutParams.ROTATION_ANIMATION_SEAMLESS : WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT;
+        win.setAttributes(winParams);
     }
 }

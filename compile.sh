@@ -116,7 +116,7 @@ fi
 
 if [ ! -d "gradle/wrapper" ]; then
     diagnostic "Downloading gradle"
-    GRADLE_VERSION=4.1
+    GRADLE_VERSION=4.4
     GRADLE_URL=https://download.videolan.org/pub/contrib/gradle/gradle-${GRADLE_VERSION}-bin.zip
     wget ${GRADLE_URL} 2>/dev/null || curl -O ${GRADLE_URL}
     checkfail "gradle: download failed"
@@ -233,7 +233,7 @@ fi
 # Fetch VLC source #
 ####################
 
-TESTED_HASH=a0c6a1d
+TESTED_HASH=c2bb759
 if [ ! -d "vlc" ]; then
     diagnostic "VLC source not found, cloning"
     #git clone https://git.videolan.org/git/vlc/vlc-3.0.git vlc

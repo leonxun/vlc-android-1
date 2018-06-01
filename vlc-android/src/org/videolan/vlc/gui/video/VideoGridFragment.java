@@ -1,7 +1,7 @@
 /*****************************************************************************
  * VideoListActivity.java
  *****************************************************************************
- * Copyright © 2011-2017 VLC authors and VideoLAN
+ * Copyright © 2011-2018 VLC authors and VideoLAN
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,8 @@ package org.videolan.vlc.gui.video;
 
 import android.annotation.TargetApi;
 import android.app.Activity;
-import android.content.Context;
+import android.arch.lifecycle.Observer;
+import android.arch.lifecycle.ViewModelProviders;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
@@ -33,9 +34,9 @@ import android.os.Handler;
 import android.os.Message;
 import android.preference.PreferenceManager;
 import android.support.annotation.MainThread;
+import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v7.view.ActionMode;
-import android.support.v7.widget.DividerItemDecoration;
 import android.support.v7.widget.RecyclerView;
 import android.util.Log;
 import android.view.ContextMenu;
@@ -45,67 +46,55 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Filter;
 
-import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.Medialibrary;
-import org.videolan.medialibrary.interfaces.MediaAddedCb;
-import org.videolan.medialibrary.interfaces.MediaUpdatedCb;
 import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.vlc.MediaParsingService;
-import org.videolan.vlc.PlaybackService;
 import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
+import org.videolan.vlc.databinding.VideoGridBinding;
 import org.videolan.vlc.gui.MainActivity;
 import org.videolan.vlc.gui.SecondaryActivity;
-import org.videolan.vlc.gui.browser.SortableFragment;
+import org.videolan.vlc.gui.browser.MediaBrowserFragment;
 import org.videolan.vlc.gui.helpers.UiTools;
-import org.videolan.vlc.gui.view.AutoFitRecyclerView;
 import org.videolan.vlc.gui.view.ContextMenuRecyclerView;
 import org.videolan.vlc.gui.view.SwipeRefreshLayout;
-import org.videolan.vlc.interfaces.Filterable;
 import org.videolan.vlc.interfaces.IEventsHandler;
 import org.videolan.vlc.media.MediaGroup;
 import org.videolan.vlc.media.MediaUtils;
+import org.videolan.vlc.media.PlaylistManager;
 import org.videolan.vlc.util.Constants;
-import org.videolan.vlc.util.Util;
+import org.videolan.vlc.viewmodels.VideosProvider;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class VideoGridFragment extends SortableFragment<VideoListAdapter> implements MediaUpdatedCb, SwipeRefreshLayout.OnRefreshListener, MediaAddedCb, Filterable, IEventsHandler {
+public class VideoGridFragment extends MediaBrowserFragment<VideosProvider> implements SwipeRefreshLayout.OnRefreshListener, IEventsHandler, Observer<List<MediaWrapper>> {
 
     private final static String TAG = "VLC/VideoListFragment";
 
-    private final static String KEY_GROUP = "key_group";
-
-    private AutoFitRecyclerView mGridView;
-    private View mViewNomedia;
+    private VideoListAdapter mAdapter;
+    private VideoGridBinding mBinding;
     private String mGroup;
-    private View mSearchButtonView;
-    private DividerItemDecoration mDividerItemDecoration;
-
-    /* All subclasses of Fragment must include a public empty constructor. */
-    public VideoGridFragment() { }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        mAdapter = new VideoListAdapter(this);
-
-        if (savedInstanceState != null)
-            setGroup(savedInstanceState.getString(KEY_GROUP));
+        if (mAdapter == null) {
+            mAdapter = new VideoListAdapter(this);
+            final SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(requireContext());
+            final int minGroupLengthValue = Integer.valueOf(preferences.getString("video_min_group_length", "6"));
+            mProvider = ViewModelProviders.of(requireActivity(), new VideosProvider.Factory(mGroup, minGroupLengthValue, Medialibrary.SORT_DEFAULT)).get(VideosProvider.class);
+            mProvider.getDataset().observe(this, this);
+        }
+        if (savedInstanceState != null) setGroup(savedInstanceState.getString(Constants.KEY_GROUP));
     }
 
 
     @Override
     public void onPrepareOptionsMenu(Menu menu) {
         super.onPrepareOptionsMenu(menu);
-        menu.findItem(R.id.ml_menu_sortby_artist_name).setVisible(false);
-        menu.findItem(R.id.ml_menu_sortby_album_name).setVisible(false);
-        menu.findItem(R.id.ml_menu_sortby_length).setVisible(true);
-        menu.findItem(R.id.ml_menu_sortby_date).setVisible(true);
         menu.findItem(R.id.ml_menu_last_playlist).setVisible(true);
     }
 
@@ -113,7 +102,7 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.ml_menu_last_playlist:
-                getActivity().sendBroadcast(new Intent(Constants.ACTION_REMOTE_LAST_VIDEO_PLAYLIST));
+                MediaUtils.loadlastPlaylist(getActivity(), Constants.PLAYLIST_TYPE_VIDEO);
                 return true;
             default:
                 return super.onOptionsItemSelected(item);
@@ -122,70 +111,45 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState){
-        return inflater.inflate(R.layout.video_grid, container, false);
-    }
-
-    @Override
-    public void onViewCreated(View v, @Nullable Bundle savedInstanceState) {
-        super.onViewCreated(v, savedInstanceState);
-        mViewNomedia = v.findViewById(android.R.id.empty);
-        mGridView = v.findViewById(android.R.id.list);
-        mSwipeRefreshLayout = v.findViewById(R.id.swipeLayout);
-        mSearchButtonView = v.findViewById(R.id.searchButton);
+        mBinding = VideoGridBinding.inflate(inflater, container, false);
+        return mBinding.getRoot();
     }
 
     @Override
     public void onActivityCreated(@Nullable Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
         mSwipeRefreshLayout.setOnRefreshListener(this);
-        mDividerItemDecoration = new DividerItemDecoration(getActivity(), DividerItemDecoration.VERTICAL);
-        if (mAdapter.isListMode())
-            mGridView.addItemDecoration(mDividerItemDecoration);
-        if (savedInstanceState != null) {
-            final List<MediaWrapper> list = (List<MediaWrapper>) VLCApplication.getData("list"+getTitle());
-            if (!Util.isListEmpty(list)) mAdapter.update(list);
-        }
-        mGridView.setAdapter(mAdapter);
+        mBinding.videoGrid.setAdapter(mAdapter);
     }
 
     private boolean restart = false;
     @Override
-    public void onHiddenChanged(boolean hidden) {
-        super.onHiddenChanged(hidden);
-        if (!hidden) {
-            if (mMediaLibrary.isInitiated())
-                onMedialibraryReady();
-            else if (mGroup == null)
-                setupMediaLibraryReceiver();
-            registerForContextMenu(mGridView);
-            setSearchVisibility(false);
-            updateViewMode();
-            mFabPlay.setImageResource(R.drawable.ic_fab_play);
-            setFabPlayVisibility(true);
-            if (restart && !mMediaLibrary.isWorking()) updateList();
-        } else {
-            mMediaLibrary.removeMediaUpdatedCb();
-            mMediaLibrary.removeMediaAddedCb();
-            unregisterForContextMenu(mGridView);
-            restart = true;
-        }
+    public void onStart() {
+        super.onStart();
+        registerForContextMenu(mBinding.videoGrid);
+        setSearchVisibility(false);
+        updateViewMode();
+        mFabPlay.setImageResource(R.drawable.ic_fab_play);
+        setFabPlayVisibility(true);
+        if (restart) mProvider.refresh();
     }
 
     @Override
-    public void onSaveInstanceState(Bundle outState) {
-        super.onSaveInstanceState(outState);
-        outState.putString(KEY_GROUP, mGroup);
-        VLCApplication.storeData("list"+getTitle(), mAdapter.getAll());
+    public void onStop() {
+        super.onStop();
+        unregisterForContextMenu(mBinding.videoGrid);
+        restart = true;
     }
 
-    protected void onMedialibraryReady() {
-        super.onMedialibraryReady();
-        if (mGroup == null) {
-            mMediaLibrary.setMediaUpdatedCb(this, Medialibrary.FLAG_MEDIA_UPDATED_VIDEO);
-            mMediaLibrary.setMediaAddedCb(this, Medialibrary.FLAG_MEDIA_ADDED_VIDEO);
-        }
-        if (!isHidden())
-            mHandler.sendEmptyMessage(UPDATE_LIST);
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(Constants.KEY_GROUP, mGroup);
+    }
+
+    @Override
+    public void onChanged(@Nullable List<MediaWrapper> mediaWrappers) {
+        if (mediaWrappers != null) mAdapter.update(mediaWrappers);
     }
 
     public String getTitle() {
@@ -206,40 +170,28 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
         if (!listMode) {
             final int thumbnailWidth = res.getDimensionPixelSize(R.dimen.grid_card_thumb_width);
             final int margin = res.getDimensionPixelSize(R.dimen.default_margin);
-            mGridView.setColumnWidth(mGridView.getPerfectColumnWidth(thumbnailWidth, margin));
-            mAdapter.setGridCardWidth(mGridView.getColumnWidth());
+            mBinding.videoGrid.setColumnWidth(mBinding.videoGrid.getPerfectColumnWidth(thumbnailWidth, margin));
+            mAdapter.setGridCardWidth(mBinding.videoGrid.getColumnWidth());
         }
-        mGridView.setNumColumns(listMode ? 1 : -1);
-        if (mAdapter.isListMode() != listMode) {
-            if (listMode)
-                mGridView.addItemDecoration(mDividerItemDecoration);
-            else
-                mGridView.removeItemDecoration(mDividerItemDecoration);
-            mAdapter.setListMode(listMode);
-        }
+        mBinding.videoGrid.setNumColumns(listMode ? 1 : -1);
+        if (mAdapter.isListMode() != listMode) mAdapter.setListMode(listMode);
     }
 
 
     protected void playVideo(MediaWrapper media, boolean fromStart) {
-        final Activity activity = getActivity();
-        if (activity instanceof PlaybackService.Callback)
-            mService.removeCallback((PlaybackService.Callback) activity);
         media.removeFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
         VideoPlayerActivity.start(getActivity(), media.getUri(), fromStart);
     }
 
     protected void playAudio(MediaWrapper media) {
-        if (mService != null) {
-            media.addFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
-            mService.load(media);
-        }
+        media.addFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
+        MediaUtils.openMedia(getActivity(), media);
     }
 
     protected boolean handleContextItemSelected(MenuItem menu, final int position) {
         if (position >= mAdapter.getItemCount()) return false;
         final MediaWrapper media = mAdapter.getItem(position);
-        if (media == null)
-            return false;
+        if (media == null) return false;
         switch (menu.getItemId()){
             case R.id.video_list_play_from_start:
                 playVideo(media, true);
@@ -261,10 +213,8 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
                 MediaUtils.openList(getActivity(), ((MediaGroup) media).getAll(), 0);
                 return true;
             case R.id.video_list_append:
-                if (media instanceof MediaGroup)
-                    mService.append(((MediaGroup)media).getAll());
-                else
-                    mService.append(media);
+                if (media instanceof MediaGroup) MediaUtils.appendMedia(getActivity(), ((MediaGroup)media).getAll());
+                else MediaUtils.appendMedia(getActivity(), media);
                 return true;
             case R.id.video_download_subtitles:
                 MediaUtils.getSubs(getActivity(), media);
@@ -280,13 +230,13 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
                 removeVideo(media);
             }
         })) return;
-        final int position = mAdapter.remove(media);
+        mProvider.remove(media);
         final View view = getView();
-        if (position != -1 && view != null) {
+        if (view != null) {
             final Runnable revert = new Runnable() {
                 @Override
                 public void run() {
-                    mAdapter.add(media);
+                    mProvider.refresh();
                 }
             };
             UiTools.snackerWithCancel(view, getString(R.string.file_deleted), new Runnable() {
@@ -307,20 +257,11 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
         if (media == null) return;
         final MenuInflater inflater = getActivity().getMenuInflater();
         inflater.inflate(media instanceof MediaGroup ? R.menu.video_group_contextual : R.menu.video_list, menu);
-        if (media instanceof MediaGroup) {
-            if (!AndroidUtil.isHoneycombOrLater) {
-                menu.findItem(R.id.video_list_append).setVisible(false);
-                menu.findItem(R.id.video_group_play).setVisible(false);
-            }
-        } else setContextMenuItems(menu, media);
+        if (!(media instanceof MediaGroup)) setContextMenuItems(menu, media);
     }
 
     private void setContextMenuItems(Menu menu, MediaWrapper mediaWrapper) {
         menu.findItem(R.id.video_list_play_from_start).setVisible(mediaWrapper.getTime() > 0);
-        if (!AndroidUtil.isHoneycombOrLater) {
-            menu.findItem(R.id.video_list_play_all).setVisible(false);
-            menu.findItem(R.id.video_list_append).setVisible(false);
-        }
     }
 
     @Override
@@ -329,50 +270,14 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
         MediaUtils.openList(getActivity(), playList, mAdapter.getListWithPosition(playList, 0));
     }
 
-    @Override
-    public void onMediaUpdated(final MediaWrapper[] mediaList) {
-        mAdapter.add(mediaList);
-    }
-
-    @Override
-    public void onMediaAdded(final MediaWrapper[] mediaList) {
-        mAdapter.add(mediaList);
-    }
-
     @MainThread
     public void updateList() {
+        mProvider.refresh();
         mHandler.sendEmptyMessageDelayed(SET_REFRESHING, 300);
-        final Context ctx = getActivity();
-
-        VLCApplication.runBackground(new Runnable() {
-            @Override
-            public void run() {
-                final MediaWrapper[] itemList = mMediaLibrary.getVideos();
-                final List<MediaWrapper> displayList = new ArrayList<>();
-                if (mGroup != null) {
-                    for (MediaWrapper item : itemList) {
-                        String title = item.getTitle().substring(item.getTitle().toLowerCase().startsWith("the") ? 4 : 0);
-                        if (mGroup == null || title.toLowerCase().startsWith(mGroup.toLowerCase()))
-                            displayList.add(item);
-                    }
-                } else {
-                    final SharedPreferences preferences = ctx != null ? PreferenceManager.getDefaultSharedPreferences(ctx) : null;
-                    final int minGroupLengthValue = preferences != null ? Integer.valueOf(preferences.getString("video_min_group_length", "6")) : 6;
-                    for (MediaGroup item : MediaGroup.group(itemList, minGroupLengthValue)) displayList.add(item.getMedia());
-                }
-                VLCApplication.runOnMainThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        mAdapter.update(displayList);
-                    }
-                });
-                mHandler.sendEmptyMessage(UNSET_REFRESHING);
-            }
-        });
     }
 
     void updateEmptyView() {
-        mViewNomedia.setVisibility(mAdapter.getItemCount() > 0 ? View.GONE : View.VISIBLE);
+        mBinding.setEmpty(mAdapter.isEmpty());
     }
 
     public void setGroup(String prefix) {
@@ -381,11 +286,9 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
 
     @Override
     public void onRefresh() {
-        getActivity().startService(new Intent(Constants.ACTION_RELOAD, null, getActivity(), MediaParsingService.class));
+        final Activity activity = getActivity();
+        if (activity != null) activity.startService(new Intent(Constants.ACTION_RELOAD, null, getActivity(), MediaParsingService.class));
     }
-
-    @Override
-    public void display() {}
 
     public void clear(){
         mAdapter.clear();
@@ -394,38 +297,6 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
     @Override
     public void setFabPlayVisibility(boolean enable) {
         super.setFabPlayVisibility(!mAdapter.isEmpty() && enable);
-    }
-
-    @Override
-    protected void onParsingServiceStarted() {
-        mHandler.sendEmptyMessageDelayed(SET_REFRESHING, 300);
-    }
-
-    @Override
-    protected void onParsingServiceFinished() {
-        mMediaLibrary.removeMediaUpdatedCb();
-        mMediaLibrary.removeMediaAddedCb();
-        if (!isHidden()) mHandler.sendEmptyMessage(UPDATE_LIST);
-    }
-
-    @Override
-    public boolean enableSearchOption() {
-        return true;
-    }
-
-    @Override
-    public Filter getFilter() {
-        return mAdapter.getFilter();
-    }
-
-    @Override
-    public void restoreList() {
-        if (mAdapter != null && mGridView != null) mAdapter.restoreList();
-    }
-
-    @Override
-    public void setSearchVisibility(boolean visible) {
-        mSearchButtonView.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
     @TargetApi(Build.VERSION_CODES.HONEYCOMB)
@@ -443,8 +314,7 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
             return false;
         }
         menu.findItem(R.id.action_video_info).setVisible(count == 1);
-        menu.findItem(R.id.action_video_play).setVisible(AndroidUtil.isHoneycombOrLater || count == 1);
-        menu.findItem(R.id.action_video_append).setVisible(mService != null && mService.hasMedia() && AndroidUtil.isHoneycombOrLater);
+        menu.findItem(R.id.action_video_append).setVisible(PlaylistManager.Companion.hasMedia());
         return true;
     }
 
@@ -463,8 +333,8 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
                     showInfoDialog(list.get(0));
                     break;
                 //            case R.id.action_video_delete:
-                //                for (int position : mAdapter.getSelectedPositions())
-                //                    removeVideo(position, mAdapter.getItem(position));
+                //                for (int position : rowsAdapter.getSelectedPositions())
+                //                    removeVideo(position, rowsAdapter.getItem(position));
                 //                break;
                 case R.id.action_video_download_subtitles:
                     MediaUtils.getSubs(getActivity(), list);
@@ -489,11 +359,11 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
         setFabPlayVisibility(true);
         final List<MediaWrapper> items = mAdapter.getAll();
         for (int i = 0; i < items.size(); ++i) {
-            MediaWrapper mw = items.get(i);
+            final MediaWrapper mw = items.get(i);
             if (mw.hasStateFlags(MediaLibraryItem.FLAG_SELECTED)) {
                 mw.removeStateFlags(MediaLibraryItem.FLAG_SELECTED);
                 mAdapter.resetSelectionCount();
-                mAdapter.notifyItemChanged(i, VideoListAdapter.UPDATE_SELECTION);
+                mAdapter.notifyItemChanged(i, Constants.UPDATE_SELECTION);
             }
         }
     }
@@ -528,17 +398,17 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
         if (mActionMode != null) {
             item.toggleStateFlag(MediaLibraryItem.FLAG_SELECTED);
             mAdapter.updateSelectionCount(item.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
-            mAdapter.notifyItemChanged(position, VideoListAdapter.UPDATE_SELECTION);
+            mAdapter.notifyItemChanged(position, Constants.UPDATE_SELECTION);
             invalidateActionMode();
             return;
         }
         final Activity activity = getActivity();
         if (media instanceof MediaGroup) {
             final String title = media.getTitle().substring(media.getTitle().toLowerCase().startsWith("the") ? 4 : 0);
-            ((MainActivity)activity).showSecondaryFragment(SecondaryActivity.VIDEO_GROUP_LIST, title);
+            ((MainActivity)activity).getNavigator().showSecondaryFragment(SecondaryActivity.VIDEO_GROUP_LIST, title);
         } else {
             media.removeFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
-            final SharedPreferences settings = PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext());
+            final SharedPreferences settings = PreferenceManager.getDefaultSharedPreferences(v.getContext());
             if (settings.getBoolean("force_play_all", false)) {
                 final List<MediaWrapper> playList = new ArrayList<>();
                 MediaUtils.openList(activity, playList, mAdapter.getListWithPosition(playList, position));
@@ -550,31 +420,29 @@ public class VideoGridFragment extends SortableFragment<VideoListAdapter> implem
 
     @Override
     public boolean onLongClick(View v, int position, MediaLibraryItem item) {
-        if (mActionMode != null)
-            return false;
+        if (mActionMode != null) return false;
         item.toggleStateFlag(MediaLibraryItem.FLAG_SELECTED);
         mAdapter.updateSelectionCount(item.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
-        mAdapter.notifyItemChanged(position, VideoListAdapter.UPDATE_SELECTION);
+        mAdapter.notifyItemChanged(position, Constants.UPDATE_SELECTION);
         startActionMode();
         return true;
     }
 
     @Override
     public void onCtxClick(View v, int position, MediaLibraryItem item) {
-        if (mActionMode == null)
-            mGridView.openContextMenu(position);
+        if (mActionMode == null) mBinding.videoGrid.openContextMenu(position);
     }
 
     @Override
     public void onUpdateFinished(RecyclerView.Adapter adapter) {
-        if (!mMediaLibrary.isWorking())
-            mHandler.sendEmptyMessage(UNSET_REFRESHING);
+        if (!mMediaLibrary.isWorking()) mHandler.sendEmptyMessage(UNSET_REFRESHING);
         updateEmptyView();
         setFabPlayVisibility(true);
+        UiTools.updateSortTitles(this);
     }
 
     public void updateSeenMediaMarker() {
         mAdapter.setSeenMediaMarkerVisible(PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext()).getBoolean("media_seen", true));
-        mAdapter.notifyItemRangeChanged(0, mAdapter.getItemCount()-1, VideoListAdapter.UPDATE_SEEN);
+        mAdapter.notifyItemRangeChanged(0, mAdapter.getItemCount()-1, Constants.UPDATE_SEEN);
     }
 }

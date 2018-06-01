@@ -41,6 +41,7 @@ import android.util.Log;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.media.MediaWrapper;
+import org.videolan.vlc.BuildConfig;
 import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.media.MediaUtils;
 
@@ -120,11 +121,10 @@ public class FileUtils {
             final int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
             cursor.moveToFirst();
             return cursor.getString(column_index);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException|SecurityException e) {
                 return "";
         } finally {
-            if (cursor != null && !cursor.isClosed())
-                cursor.close();
+            if (cursor != null && !cursor.isClosed()) cursor.close();
         }
     }
 
@@ -224,13 +224,11 @@ public class FileUtils {
         boolean deleted = false;
         path = Uri.decode(Strings.removeFileProtocole(path));
         //Delete from Android Medialib, for consistency with device MTP storing and other apps listing content:// media
-        if (AndroidUtil.isHoneycombOrLater){
-            final ContentResolver cr = VLCApplication.getAppContext().getContentResolver();
-            try {
-                deleted = cr.delete(MediaStore.Files.getContentUri("external"),
-                        MediaStore.Files.FileColumns.DATA + "=?", new String[]{path}) > 0;
-            } catch (IllegalArgumentException|SecurityException ignored) {} // Can happen on some devices...
-        }
+        final ContentResolver cr = VLCApplication.getAppContext().getContentResolver();
+        try {
+            deleted = cr.delete(MediaStore.Files.getContentUri("external"),
+                    MediaStore.Files.FileColumns.DATA + "=?", new String[]{path}) > 0;
+        } catch (IllegalArgumentException|SecurityException ignored) {} // Can happen on some devices...
         final File file = new File(path);
         if (file.exists()) deleted |= file.delete();
         return deleted;
@@ -245,7 +243,7 @@ public class FileUtils {
     }
 
     private static void asyncRecursiveDelete(final File fileOrDirectory, final Callback callback) {
-        VLCApplication.runBackground(new Runnable() {
+        WorkersKt.runBackground(new Runnable() {
             public void run() {
                 if (!fileOrDirectory.exists() || !fileOrDirectory.canWrite())
                     return;
@@ -326,9 +324,7 @@ public class FileUtils {
             final ByteBuffer bb = ByteBuffer.allocateDirect((int)chunkSizeForFile);
             int read;
             long position = Math.max(size - HASH_CHUNK_SIZE, 0);
-            while ((read = fileChannel.read(bb, position)) > 0) {
-                position += read;
-            }
+            while ((read = fileChannel.read(bb, position)) > 0) position += read;
             bb.flip();
             tail = computeHashForChunk(bb);
             return String.format("%016x", size + head + tail);
@@ -344,8 +340,7 @@ public class FileUtils {
     private static long computeHashForChunk(ByteBuffer buffer) {
         final LongBuffer longBuffer = buffer.order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
         long hash = 0;
-        while (longBuffer.hasRemaining())
-            hash += longBuffer.get();
+        while (longBuffer.hasRemaining()) hash += longBuffer.get();
         return hash;
     }
 
@@ -364,20 +359,18 @@ public class FileUtils {
                             new String[]{MediaStore.MediaColumns.DISPLAY_NAME}, null, null, null);
                     if (cursor != null && cursor.moveToFirst()) {
                         final String filename = cursor.getString(cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)).replace("/", "");
-                        Log.i(TAG, "Getting file " + filename + " from content:// URI");
+                        if (BuildConfig.DEBUG) Log.i(TAG, "Getting file " + filename + " from content:// URI");
                         is = ctx.getContentResolver().openInputStream(data);
                         if (is == null) return data;
                         os = new FileOutputStream(AndroidDevices.EXTERNAL_PUBLIC_DIRECTORY + "/Download/" + filename);
                         final byte[] buffer = new byte[1024];
                         int bytesRead;
-                        while ((bytesRead = is.read(buffer)) >= 0) {
-                            os.write(buffer, 0, bytesRead);
-                        }
+                        while ((bytesRead = is.read(buffer)) >= 0) os.write(buffer, 0, bytesRead);
                         uri = AndroidUtil.PathToUri(AndroidDevices.EXTERNAL_PUBLIC_DIRECTORY + "/Download/" + filename);
                     }
                 } catch (Exception e) {
                     Log.e(TAG, "Couldn't download file from mail URI");
-                    return data;
+                    return null;
                 } finally {
                     Util.close(is);
                     Util.close(os);
@@ -392,12 +385,7 @@ public class FileUtils {
                 try {
                     inputPFD = ctx.getContentResolver().openFileDescriptor(data, "r");
                     if (inputPFD == null) return data;
-                    if (AndroidUtil.isHoneycombMr1OrLater)
-                        uri = AndroidUtil.LocationToUri("fd://" + inputPFD.getFd());
-                    else {
-                        String fdString = inputPFD.getFileDescriptor().toString();
-                        uri = AndroidUtil.LocationToUri("fd://" + fdString.substring(15, fdString.length() - 1));
-                    }
+                    uri = AndroidUtil.LocationToUri("fd://" + inputPFD.getFd());
 //                    Cursor returnCursor =
 //                            getContentResolver().query(data, null, null, null, null);
 //                    if (returnCursor != null) {
@@ -412,10 +400,10 @@ public class FileUtils {
 //                    }
                 } catch (FileNotFoundException|IllegalArgumentException e) {
                     Log.e(TAG, "Couldn't understand the intent");
-                    return data;
+                    return null;
                 } catch (SecurityException e) {
                     Log.e(TAG, "Permission is no longer valid");
-                    return data;
+                    return null;
                 }
             }
         }

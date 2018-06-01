@@ -23,23 +23,18 @@
 package org.videolan.vlc.gui.browser;
 
 import android.annotation.TargetApi;
+import android.arch.lifecycle.Observer;
 import android.content.Intent;
-import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.Looper;
 import android.os.Message;
-import android.os.Process;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
-import android.support.v4.util.SimpleArrayMap;
 import android.support.v7.preference.PreferenceManager;
 import android.support.v7.view.ActionMode;
 import android.support.v7.widget.LinearLayoutManager;
@@ -51,133 +46,88 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Filter;
-import android.widget.TextView;
 
-import org.videolan.libvlc.Media;
-import org.videolan.libvlc.util.AndroidUtil;
-import org.videolan.libvlc.util.MediaBrowser;
 import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
-import org.videolan.medialibrary.media.Storage;
 import org.videolan.vlc.R;
-import org.videolan.vlc.VLCApplication;
+import org.videolan.vlc.databinding.DirectoryBrowserBinding;
 import org.videolan.vlc.gui.InfoActivity;
-import org.videolan.vlc.gui.MainActivity;
 import org.videolan.vlc.gui.dialogs.SavePlaylistDialog;
 import org.videolan.vlc.gui.helpers.UiTools;
-import org.videolan.vlc.gui.view.ContextMenuRecyclerView;
 import org.videolan.vlc.gui.view.SwipeRefreshLayout;
-import org.videolan.vlc.interfaces.Filterable;
 import org.videolan.vlc.interfaces.IEventsHandler;
 import org.videolan.vlc.interfaces.IRefreshable;
 import org.videolan.vlc.media.MediaDatabase;
 import org.videolan.vlc.media.MediaUtils;
+import org.videolan.vlc.media.PlaylistManager;
 import org.videolan.vlc.util.AndroidDevices;
 import org.videolan.vlc.util.Strings;
 import org.videolan.vlc.util.Util;
-import org.videolan.vlc.util.VLCInstance;
 import org.videolan.vlc.util.WeakHandler;
+import org.videolan.vlc.viewmodels.browser.BrowserProvider;
 
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
+import kotlin.Pair;
 
-public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAdapter> implements IRefreshable, MediaBrowser.EventListener, SwipeRefreshLayout.OnRefreshListener, View.OnClickListener, Filterable, IEventsHandler {
+public abstract class BaseBrowserFragment extends MediaBrowserFragment<BrowserProvider> implements IRefreshable, SwipeRefreshLayout.OnRefreshListener, View.OnClickListener, IEventsHandler {
     protected static final String TAG = "VLC/BaseBrowserFragment";
 
     public static final String KEY_MRL = "key_mrl";
     public static final String KEY_MEDIA = "key_media";
-    public static final String KEY_MEDIA_LIST = "key_media_list";
-    public static final String KEY_CONTENT_LIST = "key_content_list";
     public static final String KEY_POSITION = "key_list";
 
-    public volatile boolean refreshing = false;
-    private List<MediaLibraryItem> refreshList;
-
-    protected BrowserFragmentHandler mHandler;
-    protected MediaBrowser mMediaBrowser;
-    protected ContextMenuRecyclerView mRecyclerView;
-    private View mSearchButtonView;
+    protected final BrowserFragmentHandler mHandler = new BrowserFragmentHandler(this);
     protected LinearLayoutManager mLayoutManager;
-    protected TextView mEmptyView;
     public String mMrl;
     protected MediaWrapper mCurrentMedia;
-    protected int mSavedPosition = -1, mFavorites = 0;
+    protected int mSavedPosition = -1;
     public boolean mRoot;
     protected boolean goBack = false;
-    private final boolean mShowHiddenFiles;
-
-    private SimpleArrayMap<MediaLibraryItem, List<MediaLibraryItem>> mFoldersContentLists;
-    public int mCurrentParsedPosition = 0;
+    protected boolean mShowHiddenFiles;
+    protected BaseBrowserAdapter mAdapter;
 
     protected abstract Fragment createFragment();
     protected abstract void browseRoot();
     protected abstract String getCategoryTitle();
 
-    private Handler mBrowserHandler;
-
-    protected void runOnBrowserThread(Runnable runnable) {
-        if (Looper.myLooper() == mBrowserHandler.getLooper())
-            runnable.run();
-        else
-            mBrowserHandler.post(runnable);
-    }
-
-    public BaseBrowserFragment() {
-        mHandler = new BrowserFragmentHandler(this);
-        if (mBrowserHandler == null) {
-            HandlerThread handlerThread = new HandlerThread("vlc-browser", Process.THREAD_PRIORITY_DEFAULT+Process.THREAD_PRIORITY_LESS_FAVORABLE);
-            handlerThread.start();
-            mBrowserHandler = new Handler(handlerThread.getLooper());
-        }
-        mShowHiddenFiles = PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext()).getBoolean("browser_show_hidden_files", false);
-    }
+    protected BrowserProvider browser;
 
     @SuppressWarnings("unchecked")
     public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
-        if (bundle == null)
-            bundle = getArguments();
+        if (bundle == null) bundle = getArguments();
         if (bundle != null) {
             mCurrentMedia = bundle.getParcelable(KEY_MEDIA);
             if (mCurrentMedia != null) mMrl = mCurrentMedia.getLocation();
             else mMrl = bundle.getString(KEY_MRL);
             mSavedPosition = bundle.getInt(KEY_POSITION);
-        } else if (getActivity().getIntent() != null){
-            mMrl = getActivity().getIntent().getDataString();
-            getActivity().setIntent(null);
+        } else if (requireActivity().getIntent() != null){
+            mMrl = requireActivity().getIntent().getDataString();
+            requireActivity().setIntent(null);
         }
+        mShowHiddenFiles = PreferenceManager.getDefaultSharedPreferences(requireContext()).getBoolean("browser_show_hidden_files", false);
         mRoot = defineIsRoot();
-        if (mFoldersContentLists == null) mFoldersContentLists = new SimpleArrayMap<>();
     }
 
     @Override
     public void onPrepareOptionsMenu(Menu menu) {
         super.onPrepareOptionsMenu(menu);
-        menu.findItem(R.id.ml_menu_filter).setVisible(enableSearchOption());
-    }
-
-    protected int getLayoutId(){
-        return R.layout.directory_browser;
+        final MenuItem item = menu.findItem(R.id.ml_menu_filter);
+        if (item != null) item.setVisible(enableSearchOption());
+        final MenuItem sortItem = menu.findItem(R.id.ml_menu_sortby);
+        if (sortItem != null) sortItem.setVisible(!mRoot);
     }
 
     protected boolean defineIsRoot() {
         return mMrl == null;
     }
 
+    protected DirectoryBrowserBinding mBinding;
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-        return inflater.inflate(getLayoutId(), container, false);
-    }
-
-    @Override
-    public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
-        super.onViewCreated(view, savedInstanceState);
-        mRecyclerView = view.findViewById(R.id.network_list);
-        mEmptyView = view.findViewById(android.R.id.empty);
-        mSwipeRefreshLayout = view.findViewById(R.id.swipeLayout);
-        mSearchButtonView = view.findViewById(R.id.searchButton);
+        mBinding = DirectoryBrowserBinding.inflate(inflater, container, false);
+        return mBinding.getRoot();
     }
 
     @Override
@@ -185,19 +135,34 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         super.onActivityCreated(savedInstanceState);
         if (mAdapter == null) mAdapter = new BaseBrowserAdapter(this);
         mLayoutManager = new LinearLayoutManager(getActivity());
-        mRecyclerView.setLayoutManager(mLayoutManager);
-        mRecyclerView.setAdapter(mAdapter);
-        registerForContextMenu(mRecyclerView);
+        mBinding.networkList.setLayoutManager(mLayoutManager);
+        mBinding.networkList.setAdapter(mAdapter);
+        registerForContextMenu(mBinding.networkList);
         mSwipeRefreshLayout.setOnRefreshListener(this);
-        @SuppressWarnings("unchecked")
-        final SimpleArrayMap<MediaLibraryItem, List<MediaLibraryItem>> content = (SimpleArrayMap<MediaLibraryItem, List<MediaLibraryItem>>) VLCApplication.getData(KEY_CONTENT_LIST + mMrl);
-        if (content != null) mFoldersContentLists = content;
-        @SuppressWarnings("unchecked")
-        final List<MediaLibraryItem> mediaList = mRoot ? null : (List<MediaLibraryItem>) VLCApplication.getData(KEY_MEDIA_LIST + mMrl);
-        if (!Util.isListEmpty(mediaList)) {
-            mAdapter.update(mediaList);
-            parseSubDirectories();
-        } else mHandler.sendEmptyMessage(BrowserFragmentHandler.MSG_REFRESH);
+        mProvider.getDataset().observe(this, new Observer<List<MediaLibraryItem>>() {
+            @Override
+            public void onChanged(@Nullable List<MediaLibraryItem> mediaLibraryItems) {
+                mAdapter.update(mediaLibraryItems);
+            }
+        });
+        mProvider.getDescriptionUpdate().observe(this, new Observer<Pair<Integer, String>>() {
+            @Override
+            public void onChanged(@Nullable Pair<Integer, String> pair) {
+                if (pair != null) mAdapter.notifyItemChanged(pair.getFirst(), pair.getSecond());
+            }
+        });
+        initFavorites();
+    }
+
+    protected void initFavorites() {}
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        if (mFabPlay != null) {
+            mFabPlay.setImageResource(R.drawable.ic_fab_play);
+            updateFab();
+        }
     }
 
     @Override
@@ -210,34 +175,15 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
     }
 
     @Override
-    public void onHiddenChanged(boolean hidden) {
-        super.onHiddenChanged(hidden);
-        if (hidden) {
-            releaseBrowser();
-        } else if (mFabPlay != null) {
-            mFabPlay.setImageResource(R.drawable.ic_fab_play);
-            updateFab();
-        }
+    public void onStop() {
+        super.onStop();
+        mProvider.stop();
     }
 
-    private void releaseBrowser() {
-        runOnBrowserThread(new Runnable() {
-            @Override
-            public void run() {
-                if (mMediaBrowser != null) {
-                    mMediaBrowser.release();
-                    mMediaBrowser = null;
-                }
-            }
-        });
-    }
-
-    public void onSaveInstanceState(Bundle outState){
+    public void onSaveInstanceState(@NonNull Bundle outState){
         outState.putString(KEY_MRL, mMrl);
         outState.putParcelable(KEY_MEDIA, mCurrentMedia);
-        if (!mRoot && mAdapter != null) VLCApplication.storeData(KEY_MEDIA_LIST+mMrl, mAdapter.getAll());
-        VLCApplication.storeData(KEY_CONTENT_LIST+mMrl, mFoldersContentLists);
-        if (mRecyclerView != null) outState.putInt(KEY_POSITION, mLayoutManager.findFirstCompletelyVisibleItemPosition());
+        if (mBinding.networkList != null) outState.putInt(KEY_POSITION, mLayoutManager.findFirstCompletelyVisibleItemPosition());
         super.onSaveInstanceState(outState);
     }
 
@@ -246,15 +192,12 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
     }
 
     public String getTitle(){
-        if (mRoot)
-            return getCategoryTitle();
-        else
-            return mCurrentMedia != null ? mCurrentMedia.getTitle() : mMrl;
+        if (mRoot) return getCategoryTitle();
+        else return mCurrentMedia != null ? mCurrentMedia.getTitle() : mMrl;
     }
 
     public String getSubTitle(){
-        if (mRoot)
-            return null;
+        if (mRoot) return null;
         String mrl = Strings.removeFileProtocole(mMrl);
         if (!TextUtils.isEmpty(mrl)) {
             if (this instanceof FileBrowserFragment && mrl.startsWith(AndroidDevices.EXTERNAL_PUBLIC_DIRECTORY))
@@ -267,164 +210,54 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
     public boolean goBack(){
         final FragmentActivity activity = getActivity();
         if (activity == null) return false;
-        if (!mRoot) {
-            final FragmentManager fm = activity.getSupportFragmentManager();
-            final String tag = fm.getBackStackEntryAt(fm.getBackStackEntryCount()-1).getName();
-            if (!activity.getSupportFragmentManager().popBackStackImmediate() && activity instanceof MainActivity)
-                ((MainActivity)activity).showFragment(this instanceof NetworkBrowserFragment ? R.id.nav_network : R.id.nav_directories);
-            final Fragment current = fm.findFragmentByTag(tag);
-            final View view = current != null ? current.getView() : null;
-            if (view != null) view.setVisibility(View.VISIBLE);
-        }
+        if (!mRoot) activity.getSupportFragmentManager().popBackStack();
         return !mRoot;
     }
 
-    public void browse(MediaWrapper media, int position, boolean save) {
-        if (!isResumed() || isRemoving())
-            return;
-        mBrowserHandler.removeCallbacksAndMessages(null);
-        final FragmentTransaction ft = getActivity().getSupportFragmentManager().beginTransaction();
+    public void browse(MediaWrapper media, boolean save) {
+        final FragmentActivity ctx = getActivity();
+        if (ctx == null || !isResumed() || isRemoving()) return;
+        final FragmentTransaction ft = ctx.getSupportFragmentManager().beginTransaction();
         final Fragment next = createFragment();
         final Bundle args = new Bundle();
-        if (!mRoot) VLCApplication.storeData(KEY_MEDIA_LIST+mMrl, mAdapter.getAll());
-        VLCApplication.storeData(KEY_CONTENT_LIST+ mMrl, mFoldersContentLists);
-        final List<MediaLibraryItem> list = mFoldersContentLists.get(media);
-        if (!Util.isListEmpty(list) && !(this instanceof StorageBrowserFragment))
-            VLCApplication.storeData(KEY_MEDIA_LIST+ media.getLocation(), list);
+        mProvider.saveList(media);
         args.putParcelable(KEY_MEDIA, media);
         next.setArguments(args);
-        if (isRootDirectory())
-            ft.hide(this);
-        else
-            ft.remove(this);
-        if (save)
-            ft.addToBackStack(mRoot ? "root" : mMrl);
-        ft.add(R.id.fragment_placeholder, next, media.getLocation());
+        if (save) ft.addToBackStack(mRoot ? "root" : mMrl);
+        ft.replace(R.id.fragment_placeholder, next, media.getLocation());
         ft.commit();
-    }
-
-    @Override
-    public void onMediaAdded(final int index, final Media media) {
-        if (refreshing && !mRoot) {
-            MediaWrapper mediaWrapper = getMediaWrapper(new MediaWrapper(media));
-            refreshList.add(mediaWrapper);
-            return;
-        }
-        final MediaWrapper mediaWrapper = getMediaWrapper(new MediaWrapper(media));
-        VLCApplication.runOnMainThread(new Runnable() {
-            @Override
-            public void run() {
-                mAdapter.addItem(mediaWrapper, false);
-            }
-        });
-    }
-
-    @Override
-    public void onMediaRemoved(int index, final Media media) {
-        mAdapter.removeItem(media.getUri().toString());
-    }
-
-    @Override
-    public void onBrowseEnd() {
-        if (!isAdded()) return;
-        if (refreshing && !mRoot) {
-            refreshing = false;
-            VLCApplication.runOnMainThread(new Runnable() {
-                @Override
-                public void run() {
-                    mAdapter.update(refreshList);
-                }
-            });
-        } else
-            refreshList = null;
-
-        mHandler.sendEmptyMessage(BrowserFragmentHandler.MSG_HIDE_LOADING);
-        releaseBrowser();
-        VLCApplication.runOnMainThread(new Runnable() {
-            @Override
-            public void run() {
-                parseSubDirectories();
-            }
-        });
     }
 
     @Override
     public void onRefresh() {
         mSavedPosition = mLayoutManager.findFirstCompletelyVisibleItemPosition();
-        refresh();
+        mProvider.refresh();
     }
 
     /**
      * Update views visibility and emptiness info
      */
     protected void updateEmptyView() {
-        if (mSwipeRefreshLayout == null)
-            return;
-        if (mAdapter.isEmpty()) {
+        if (mSwipeRefreshLayout == null) return;
+        if (Util.isListEmpty(getProvider().getDataset().getValue())) {
             if (mSwipeRefreshLayout.isRefreshing()) {
-                mEmptyView.setText(R.string.loading);
-                mEmptyView.setVisibility(View.VISIBLE);
-                mRecyclerView.setVisibility(View.GONE);
+                mBinding.empty.setText(R.string.loading);
+                mBinding.empty.setVisibility(View.VISIBLE);
+                mBinding.networkList.setVisibility(View.GONE);
             } else {
-                mEmptyView.setText(R.string.directory_empty);
-                mEmptyView.setVisibility(View.VISIBLE);
-                mRecyclerView.setVisibility(View.GONE);
+                mBinding.empty.setText(R.string.directory_empty);
+                mBinding.empty.setVisibility(View.VISIBLE);
+                mBinding.networkList.setVisibility(View.GONE);
             }
-        } else if (mEmptyView.getVisibility() == View.VISIBLE) {
-            mEmptyView.setVisibility(View.GONE);
-            mRecyclerView.setVisibility(View.VISIBLE);
+        } else if (mBinding.empty.getVisibility() == View.VISIBLE) {
+            mBinding.empty.setVisibility(View.GONE);
+            mBinding.networkList.setVisibility(View.VISIBLE);
         }
     }
 
     @Override
     public void refresh() {
-        if (!isResumed()) return;
-        if (isSortEnabled()) {
-            refreshList = new ArrayList<>();
-            refreshing = true;
-        } else mAdapter.clear();
-        mBrowserHandler.removeCallbacksAndMessages(null);
-        mHandler.sendEmptyMessageDelayed(BrowserFragmentHandler.MSG_SHOW_LOADING, 300);
-
-        runOnBrowserThread(new Runnable() {
-            @Override
-            public void run() {
-                if (mFoldersContentLists != null)
-                    mFoldersContentLists.clear();
-                initMediaBrowser(BaseBrowserFragment.this);
-                mCurrentParsedPosition = 0;
-                if (mRoot)
-                    VLCApplication.runOnMainThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            browseRoot();
-                        }
-                    });
-                else
-                    browse(mCurrentMedia != null ? mCurrentMedia.getUri() : Uri.parse(mMrl), getBrowserFlags());
-            }
-        });
-    }
-
-    private void browse(final Uri uri, final int flags) {
-        runOnBrowserThread(new Runnable() {
-            @Override
-            public void run() {
-                mMediaBrowser.browse(uri, flags);
-            }
-        });
-    }
-
-    protected void initMediaBrowser(final MediaBrowser.EventListener listener) {
-        runOnBrowserThread(new Runnable() {
-            @Override
-            public void run() {
-                if (mMediaBrowser == null)
-                    mMediaBrowser = new MediaBrowser(VLCInstance.get(), listener, mBrowserHandler);
-                else
-                    mMediaBrowser.changeEventListener(listener);
-            }
-        });
+        mProvider.refresh();
     }
 
     @Override
@@ -433,13 +266,6 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
             case R.id.fab:
                 playAll(null);
         }
-    }
-
-    protected int getBrowserFlags() {
-        int flags = MediaBrowser.Flag.Interact;
-        if (mShowHiddenFiles)
-            flags |= MediaBrowser.Flag.ShowHiddenFiles;
-        return flags;
     }
 
     static class BrowserFragmentHandler extends WeakHandler<BaseBrowserFragment> {
@@ -451,6 +277,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         BrowserFragmentHandler(BaseBrowserFragment owner) {
             super(owner);
         }
+
         @Override
         public void handleMessage(Message msg) {
             final BaseBrowserFragment fragment = getOwner();
@@ -478,10 +305,10 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
 
     @Override
     protected void inflate(Menu menu, int position) {
-        MediaWrapper mw = (MediaWrapper) mAdapter.getItem(position);
+        final MediaWrapper mw = (MediaWrapper) mAdapter.getItem(position);
         if (mw == null) return;
-        int type = mw.getType();
-        MenuInflater inflater = getActivity().getMenuInflater();
+        final int type = mw.getType();
+        final MenuInflater inflater = getActivity().getMenuInflater();
         inflater.inflate(type == MediaWrapper.TYPE_DIR ? R.menu.directory_view_dir : R.menu.directory_view_file, menu);
     }
 
@@ -491,7 +318,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         final int type = mw.getType();
         boolean canWrite = this instanceof FileBrowserFragment;
         if (type == MediaWrapper.TYPE_DIR) {
-            final boolean isEmpty = Util.isListEmpty(mFoldersContentLists.get(mw));
+            final boolean isEmpty = mProvider.isFolderEmpty(mw);
 //                if (canWrite) {
 //                    boolean nomedia = new File(mw.getLocation() + "/.nomedia").exists();
 //                    menu.findItem(R.id.directory_view_hide_media).setVisible(!nomedia);
@@ -503,7 +330,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
             menu.findItem(R.id.directory_view_play_folder).setVisible(!isEmpty);
             menu.findItem(R.id.directory_view_delete).setVisible(!mRoot && canWrite);
             if (this instanceof NetworkBrowserFragment) {
-                MediaDatabase db = MediaDatabase.getInstance();
+                final MediaDatabase db = MediaDatabase.getInstance();
                 if (db.networkFavExists(mw.getUri())) {
                     menu.findItem(R.id.network_remove_favorite).setVisible(true);
                     menu.findItem(R.id.network_edit_favorite).setVisible(!TextUtils.equals(mw.getUri().getScheme(), "upnp"));
@@ -512,7 +339,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
             }
         } else {
             boolean canPlayInList =  mw.getType() == MediaWrapper.TYPE_AUDIO ||
-                    (mw.getType() == MediaWrapper.TYPE_VIDEO && AndroidUtil.isHoneycombOrLater);
+                    (mw.getType() == MediaWrapper.TYPE_VIDEO);
             menu.findItem(R.id.directory_view_play_all).setVisible(canPlayInList);
             menu.findItem(R.id.directory_view_append).setVisible(canPlayInList);
             menu.findItem(R.id.directory_view_delete).setVisible(canWrite);
@@ -525,7 +352,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
 
     @TargetApi(Build.VERSION_CODES.HONEYCOMB)
     public void openContextMenu(final int position) {
-        mRecyclerView.openContextMenu(position);
+        mBinding.networkList.openContextMenu(position);
     }
 
     protected boolean handleContextItemSelected(MenuItem item, final int position) {
@@ -533,7 +360,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         if (! (mAdapter.getItem(position) instanceof MediaWrapper))
             return super.onContextItemSelected(item);
         final Uri uri = ((MediaWrapper) mAdapter.getItem(position)).getUri();
-        MediaWrapper mwFromMl = "file".equals(uri.getScheme()) ? mMediaLibrary.getMedia(uri) : null;
+        final MediaWrapper mwFromMl = "file".equals(uri.getScheme()) ? mMediaLibrary.getMedia(uri) : null;
         final MediaWrapper mw = mwFromMl != null ? mwFromMl : (MediaWrapper) mAdapter.getItem(position);
         switch (id){
             case R.id.directory_view_play_all:
@@ -541,8 +368,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
                 playAll(mw);
                 return true;
             case R.id.directory_view_append: {
-                if (mService != null)
-                    mService.append(mw);
+                MediaUtils.appendMedia(getActivity(), mw);
                 return true;
             }
             case R.id.directory_view_delete:
@@ -557,10 +383,8 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
                 showMediaInfo(mw);
                 return true;
             case R.id.directory_view_play_audio:
-                if (mService != null) {
-                    mw.addFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
-                    mService.load(mw);
-                }
+                mw.addFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
+                MediaUtils.openMedia(getActivity(), mw);
                 return true;
             case R.id.directory_view_play_folder:
                 MediaUtils.openMedia(getActivity(), mw);
@@ -592,11 +416,11 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
     }
 
     private void removeMedia(final MediaWrapper mw) {
-        mAdapter.removeItem(mw);
+        mProvider.remove(mw);
         final Runnable cancel = new Runnable() {
             @Override
             public void run() {
-                mAdapter.addItem(mw, true);
+                mProvider.refresh();
             }
         };
         final View v = getView();
@@ -620,7 +444,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         for (Object file : mAdapter.getAll())
             if (file instanceof MediaWrapper) {
                 final MediaWrapper media = (MediaWrapper) file;
-                if ((AndroidUtil.isHoneycombOrLater && media.getType() == MediaWrapper.TYPE_VIDEO) || media.getType() == MediaWrapper.TYPE_AUDIO) {
+                if (media.getType() == MediaWrapper.TYPE_VIDEO || media.getType() == MediaWrapper.TYPE_AUDIO) {
                     mediaLocations.add(media);
                     if (mw != null && media.equals(mw))
                         positionInPlaylist = mediaLocations.size() - 1;
@@ -629,160 +453,9 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         if (getActivity() != null) MediaUtils.openList(getActivity(), mediaLocations, positionInPlaylist);
     }
 
-    private final List<MediaLibraryItem> currentMediaList = new ArrayList<>();
-    protected void parseSubDirectories() {
-        if ((mRoot && this instanceof NetworkBrowserFragment)
-                || mCurrentParsedPosition == -1 ||this instanceof FilePickerFragment) return;
-        synchronized (currentMediaList) {
-            currentMediaList.addAll(mAdapter.peekLast());
-            if (currentMediaList.isEmpty()) return;
-        }
-        runOnBrowserThread(new Runnable() {
-            @Override
-            public void run() {
-                synchronized (currentMediaList) {
-                    mFoldersContentLists.clear();
-                    initMediaBrowser(mFoldersBrowserListener);
-                    mCurrentParsedPosition = 0;
-                    while (mCurrentParsedPosition < currentMediaList.size()) {
-                        final MediaLibraryItem item = currentMediaList.get(mCurrentParsedPosition);
-                        final MediaWrapper mw;
-                        if (item.getItemType() == MediaLibraryItem.TYPE_STORAGE) {
-                            mw = new MediaWrapper(((Storage) item).getUri());
-                            mw.setType(MediaWrapper.TYPE_DIR);
-                        } else if (item.getItemType() == MediaLibraryItem.TYPE_MEDIA) {
-                            mw = (MediaWrapper) item;
-                        } else
-                            mw = null;
-                        if (mw != null) {
-                            if (mw.getType() == MediaWrapper.TYPE_DIR || mw.getType() == MediaWrapper.TYPE_PLAYLIST) {
-                                final Uri uri = mw.getUri();
-                                browse(uri, mShowHiddenFiles ? MediaBrowser.Flag.ShowHiddenFiles : 0);
-                                return;
-                            }
-                        }
-                        ++mCurrentParsedPosition;
-                    }
-                }
-            }
-        });
-    }
-
-    private MediaBrowser.EventListener mFoldersBrowserListener = new MediaBrowser.EventListener(){
-        final List<MediaWrapper> directories = new ArrayList<>();
-        final List<MediaWrapper> files = new ArrayList<>();
-        Resources res = null;
-        final StringBuilder sb = new StringBuilder();
-
-        @Override
-        public void onMediaAdded(int index, final Media media) {
-            final int type = media.getType();
-            final MediaWrapper mw = getMediaWrapper(new MediaWrapper(media));
-            if (type == Media.Type.Directory) directories.add(mw);
-            else if (type == Media.Type.File) files.add(mw);
-        }
-
-        @Override
-        public void onMediaRemoved(int index, Media media) {}
-
-        @Override
-        public void onBrowseEnd() {
-            synchronized (currentMediaList) {
-                if (currentMediaList.isEmpty() || !isAdded()) {
-                    mCurrentParsedPosition = -1;
-                    releaseBrowser();
-                    return;
-                }
-                final String holderText = getDescription(directories.size(), files.size());
-                MediaWrapper mw = null;
-
-                if (!TextUtils.equals(holderText, "")) {
-                    final MediaLibraryItem item = currentMediaList.get(mCurrentParsedPosition);
-                    item.setDescription(holderText);
-                    final int position = mCurrentParsedPosition;
-                    mRecyclerView.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            mAdapter.notifyItemChanged(position, holderText);
-                        }
-                    });
-                    directories.addAll(files);
-                    mFoldersContentLists.put(item, new ArrayList<MediaLibraryItem>(directories));
-                }
-                while (++mCurrentParsedPosition < currentMediaList.size()){ //skip media that are not browsable
-                    final MediaLibraryItem item = currentMediaList.get(mCurrentParsedPosition);
-                    if (item.getItemType() == MediaLibraryItem.TYPE_MEDIA) {
-                        mw = (MediaWrapper) item;
-                        if (mw.getType() == MediaWrapper.TYPE_DIR || mw.getType() == MediaWrapper.TYPE_PLAYLIST)
-                            break;
-                    } else if (item.getItemType() == MediaLibraryItem.TYPE_STORAGE) {
-                        mw = new MediaWrapper(((Storage) item).getUri());
-                        break;
-                    } else
-                        mw = null;
-                }
-
-                if (mw != null) {
-                    if (mCurrentParsedPosition < currentMediaList.size()) {
-                        browse(mw.getUri(), 0);
-                    } else {
-                        mCurrentParsedPosition = -1;
-                        currentMediaList.clear();
-                        releaseBrowser();
-                    }
-                } else {
-                    releaseBrowser();
-                    currentMediaList.clear();
-                }
-                directories .clear();
-                files.clear();
-            }
-        }
-
-        private String getDescription(int folderCount, int mediaFileCount) {
-            if (res == null) res = getResources();
-            sb.setLength(0);
-            if (folderCount > 0) {
-                sb.append(res.getQuantityString(
-                        R.plurals.subfolders_quantity, folderCount, folderCount
-                ));
-                if (mediaFileCount > 0) sb.append(", ");
-            }
-            if (mediaFileCount > 0)
-                sb.append(res.getQuantityString(
-                        R.plurals.mediafiles_quantity, mediaFileCount, mediaFileCount));
-            else if (folderCount == 0 && mediaFileCount == 0)
-                sb.append(getString(R.string.directory_empty));
-            return sb.toString();
-        }
-    };
-
-    @NonNull
-    private MediaWrapper getMediaWrapper(MediaWrapper media) {
-        MediaWrapper mw = null;
-        final Uri uri = media.getUri();
-        if ((media.getType() == MediaWrapper.TYPE_AUDIO
-                || media.getType() == MediaWrapper.TYPE_VIDEO)
-                && "file".equals(uri.getScheme()))
-            mw = mMediaLibrary.getMedia(uri);
-        return mw != null ? mw : media;
-    }
-
     @Override
     public boolean enableSearchOption() {
         return !isRootDirectory();
-    }
-
-    public Filter getFilter() {
-        return mAdapter.getFilter();
-    }
-
-    public void restoreList() {
-        if (mAdapter != null && mEmptyView != null)
-            mAdapter.restoreList();
-    }
-    public void setSearchVisibility(boolean visible) {
-        UiTools.setViewVisibility(mSearchButtonView, visible ? View.VISIBLE : View.GONE);
     }
 
     @Override
@@ -802,7 +475,7 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         final List<MediaWrapper> selection = single ? mAdapter.getSelection() : null;
         int type = !Util.isListEmpty(selection) ? selection.get(0).getType() : -1;
         menu.findItem(R.id.action_mode_file_info).setVisible(single && (type == MediaWrapper.TYPE_AUDIO || type == MediaWrapper.TYPE_VIDEO));
-        menu.findItem(R.id.action_mode_file_append).setVisible(mService.hasMedia());
+        menu.findItem(R.id.action_mode_file_append).setVisible(PlaylistManager.Companion.hasMedia());
         return true;
     }
 
@@ -812,10 +485,10 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         if (!list.isEmpty()) {
             switch (item.getItemId()) {
                 case R.id.action_mode_file_play:
-                    mService.load(list, 0);
+                    MediaUtils.openList(getActivity(), list, 0);
                     break;
                 case R.id.action_mode_file_append:
-                    mService.append(list);
+                    MediaUtils.appendMedia(getActivity(), list);
                     break;
                 case R.id.action_mode_file_add_playlist:
                     UiTools.addToPlaylist(getActivity(), list);
@@ -847,23 +520,23 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
     }
 
     public void onClick(View v, int position, MediaLibraryItem item) {
-        MediaWrapper mediaWrapper = (MediaWrapper) item;
-            if (mActionMode != null) {
-                if (mediaWrapper.getType() == MediaWrapper.TYPE_AUDIO ||
-                        mediaWrapper.getType() == MediaWrapper.TYPE_VIDEO ||
-                        mediaWrapper.getType() == MediaWrapper.TYPE_DIR) {
-                    item.toggleStateFlag(MediaLibraryItem.FLAG_SELECTED);
-                    mAdapter.updateSelectionCount(mediaWrapper.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
-                    mAdapter.notifyItemChanged(position, item);
-                    invalidateActionMode();
-                }
-            } else {
-                mediaWrapper.removeFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
-                if (mediaWrapper.getType() == MediaWrapper.TYPE_DIR)
-                    browse(mediaWrapper, position, true);
-                else
-                    MediaUtils.openMedia(v.getContext(), mediaWrapper);
+        final MediaWrapper mediaWrapper = (MediaWrapper) item;
+        if (mActionMode != null) {
+            if (mediaWrapper.getType() == MediaWrapper.TYPE_AUDIO ||
+                    mediaWrapper.getType() == MediaWrapper.TYPE_VIDEO ||
+                    mediaWrapper.getType() == MediaWrapper.TYPE_DIR) {
+                item.toggleStateFlag(MediaLibraryItem.FLAG_SELECTED);
+                mAdapter.updateSelectionCount(mediaWrapper.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
+                mAdapter.notifyItemChanged(position, item);
+                invalidateActionMode();
             }
+        } else {
+            mediaWrapper.removeFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
+            if (mediaWrapper.getType() == MediaWrapper.TYPE_DIR)
+                browse(mediaWrapper, true);
+            else
+                MediaUtils.openMedia(v.getContext(), mediaWrapper);
+        }
     }
 
     public boolean onLongClick(View v, int position, MediaLibraryItem item) {
@@ -872,33 +545,34 @@ public abstract class BaseBrowserFragment extends SortableFragment<BaseBrowserAd
         if (mediaWrapper.getType() == MediaWrapper.TYPE_AUDIO ||
                 mediaWrapper.getType() == MediaWrapper.TYPE_VIDEO ||
                 mediaWrapper.getType() == MediaWrapper.TYPE_DIR) {
-            if (mActionMode != null)
-                return false;
+            if (mActionMode != null) return false;
             item.setStateFlags(MediaLibraryItem.FLAG_SELECTED);
             mAdapter.updateSelectionCount(mediaWrapper.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
             mAdapter.notifyItemChanged(position, item);
             startActionMode();
-        } else
-            mRecyclerView.openContextMenu(position);
+        } else mBinding.networkList.openContextMenu(position);
         return true;
     }
 
     public void onCtxClick(View v, int position, MediaLibraryItem item) {
         if (mActionMode == null && item.getItemType() == MediaLibraryItem.TYPE_MEDIA)
-            mRecyclerView.openContextMenu(position);
+            mBinding.networkList.openContextMenu(position);
     }
 
     public void onUpdateFinished(RecyclerView.Adapter adapter) {
+        if (mSwipeRefreshLayout != null) mSwipeRefreshLayout.setRefreshing(false);
         mHandler.sendEmptyMessage(BrowserFragmentHandler.MSG_HIDE_LOADING);
         updateEmptyView();
-        if (!mAdapter.isEmpty()) {
+        if (!Util.isListEmpty(getProvider().getDataset().getValue())) {
             if (mSavedPosition > 0) {
                 mLayoutManager.scrollToPositionWithOffset(mSavedPosition, 0);
                 mSavedPosition = 0;
             }
-            if (mRoot) parseSubDirectories();
         }
-        if (!mRoot) updateFab();
+        if (!mRoot) {
+            updateFab();
+            UiTools.updateSortTitles(this);
+        }
     }
 
     private void updateFab() {

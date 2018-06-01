@@ -9,8 +9,9 @@ import android.provider.MediaStore;
 import android.support.annotation.WorkerThread;
 import android.text.TextUtils;
 
+import org.videolan.medialibrary.Medialibrary;
+import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
-import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.gui.helpers.AudioUtil;
 import org.videolan.vlc.gui.helpers.BitmapCache;
@@ -28,52 +29,58 @@ public class ThumbnailsProvider {
 
     private static final String TAG = "VLC/ThumbnailsProvider";
 
-    private static final int sImageWidth = VLCApplication.getAppResources().getDimensionPixelSize(VLCApplication.showTvUi() ? R.dimen.tv_grid_card_thumb_width : R.dimen.grid_card_thumb_width);
+    private static File appDir;
+    private static String cacheDir;
     private static final int MAX_IMAGES = 4;
 
     @WorkerThread
-    public static Bitmap getMediaThumbnail(final MediaWrapper item) {
-        if (item.getType() == MediaWrapper.TYPE_GROUP)
-            return ThumbnailsProvider.getComposedImage((MediaGroup) item);
-        if (item.getType() == MediaWrapper.TYPE_VIDEO && TextUtils.isEmpty(item.getArtworkMrl()))
-            return getVideoThumbnail(item.getUri().getPath());
-        else
-            return AudioUtil.readCoverBitmap(Uri.decode(item.getArtworkMrl()), sImageWidth);
+    public static Bitmap getMediaThumbnail(final MediaWrapper item, int width) {
+        if (item.getType() == MediaWrapper.TYPE_GROUP) return ThumbnailsProvider.getComposedImage((MediaGroup) item, width);
+        if (item.getType() == MediaWrapper.TYPE_VIDEO && TextUtils.isEmpty(item.getArtworkMrl())) return getVideoThumbnail(item, width);
+        else return AudioUtil.readCoverBitmap(Uri.decode(item.getArtworkMrl()), width);
+    }
+
+    public static String getMediaCacheKey(boolean isMedia, MediaLibraryItem item) {
+        if (isMedia && ((MediaWrapper)item).getType() == MediaWrapper.TYPE_VIDEO && TextUtils.isEmpty(item.getArtworkMrl())) {
+            if (appDir == null) appDir = VLCApplication.getAppContext().getExternalFilesDir(null);
+            final boolean hasCache = appDir != null && appDir.exists();
+            if (hasCache && cacheDir == null) cacheDir = appDir.getAbsolutePath() + THUMBS_FOLDER_NAME;
+            return hasCache ? new StringBuilder(cacheDir).append('/').append(item.getTitle()).append(".jpg").toString() : null;
+        }
+        return item.getArtworkMrl();
     }
 
     @WorkerThread
-    private static Bitmap getVideoThumbnail(final String filePath) {
-        final File appDir = VLCApplication.getAppContext().getExternalFilesDir(null);
+    private static Bitmap getVideoThumbnail(final MediaWrapper media, int width) {
+        final String filePath = media.getUri().getPath();
+        if (appDir == null) appDir = VLCApplication.getAppContext().getExternalFilesDir(null);
         final boolean hasCache = appDir != null && appDir.exists();
-        final String thumbPath = hasCache ? appDir.getAbsolutePath()+ THUMBS_FOLDER_NAME
-                +"/"+ FileUtils.getFileNameFromPath(filePath)+".jpg" : null;
+        final String thumbPath = getMediaCacheKey(true, media);
         final Bitmap cacheBM = hasCache ? BitmapCache.getInstance().getBitmapFromMemCache(thumbPath) : null;
-        if (cacheBM != null)
-            return cacheBM;
-        if (hasCache && new File(thumbPath).exists())
-            return readCoverBitmap(thumbPath, sImageWidth);
+        if (cacheBM != null) return cacheBM;
+        if (hasCache && new File(thumbPath).exists()) return readCoverBitmap(thumbPath, width);
+        if (media.isThumbnailGenerated()) return null;
         final Bitmap bitmap = ThumbnailUtils.createVideoThumbnail(filePath, MediaStore.Video.Thumbnails.MINI_KIND);
         if (bitmap != null) {
-            if (hasCache)
-                VLCApplication.runBackground(new Runnable() {
-                    @Override
-                    public void run() {
-                        saveOnDisk(bitmap, thumbPath);
-                    }
-                });
+            BitmapCache.getInstance().addBitmapToMemCache(thumbPath, bitmap);
+            if (hasCache) {
+                media.setThumbnail(thumbPath);
+                saveOnDisk(bitmap, thumbPath);
+            }
+        } else if (media.getId() != 0L) {
+            Medialibrary.getInstance().requestThumbnail(media.getId());
         }
         return bitmap;
     }
 
     @WorkerThread
-    public static Bitmap getComposedImage(MediaGroup group) {
+    private static Bitmap getComposedImage(MediaGroup group, int width) {
         final BitmapCache bmc = BitmapCache.getInstance();
         final String key = "group:"+group.getTitle();
         Bitmap composedImage = bmc.getBitmapFromMemCache(key);
         if (composedImage == null) {
-            composedImage = composeImage(group);
-            if (composedImage != null)
-                bmc.addBitmapToMemCache(key, composedImage);
+            composedImage = composeImage(group, width);
+            if (composedImage != null) bmc.addBitmapToMemCache(key, composedImage);
         }
         return composedImage;
     }
@@ -82,25 +89,22 @@ public class ThumbnailsProvider {
      * @param group The MediaGroup instance
      * @return a Bitmap object
      */
-    private static Bitmap composeImage(MediaGroup group) {
+    private static Bitmap composeImage(MediaGroup group, int imageWidth) {
         final Bitmap[] sourcesImages = new Bitmap[Math.min(MAX_IMAGES, group.size())];
         int count = 0, minWidth = Integer.MAX_VALUE, minHeight = Integer.MAX_VALUE;
         for (MediaWrapper media : group.getAll()) {
-            final Bitmap bm = readCoverBitmap(Uri.decode(media.getArtworkMrl()), sImageWidth);
+            final Bitmap bm = getVideoThumbnail(media, imageWidth);
             if (bm != null) {
                 int width = bm.getWidth();
                 int height = bm.getHeight();
                 sourcesImages[count++] = bm;
                 minWidth = Math.min(minWidth, width);
                 minHeight = Math.min(minHeight, height);
-                if (count == MAX_IMAGES)
-                    break;
+                if (count == MAX_IMAGES) break;
             }
         }
-        if (count == 0)
-            return null;
-        if (count == 1)
-            return sourcesImages[0];
+        if (count == 0) return null;
+        if (count == 1) return sourcesImages[0];
         return composeCanvas(sourcesImages, count, minWidth, minHeight);
     }
 

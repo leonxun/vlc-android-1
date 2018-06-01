@@ -36,10 +36,13 @@ import org.videolan.vlc.gui.tv.MainTvActivity;
 import org.videolan.vlc.gui.tv.browser.interfaces.BrowserActivityInterface;
 import org.videolan.vlc.gui.tv.browser.interfaces.BrowserFragmentInterface;
 import org.videolan.vlc.gui.tv.browser.interfaces.DetailsFragment;
+import org.videolan.vlc.interfaces.Sortable;
+import org.videolan.vlc.util.Constants;
 
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 public class VerticalGridActivity extends BaseTvActivity implements BrowserActivityInterface {
 
+    private static final String TAG = "VLC/VerticalGridActivity";
     private static final int GRID_LIMIT = 24;
     BrowserFragmentInterface mFragment;
     ProgressBar mContentLoadingProgressBar;
@@ -53,29 +56,38 @@ public class VerticalGridActivity extends BaseTvActivity implements BrowserActiv
         mEmptyView = findViewById(R.id.tv_fragment_empty);
         if (savedInstanceState == null) {
             long type = getIntent().getLongExtra(MainTvActivity.BROWSER_TYPE, -1);
-            if (type == MainTvActivity.HEADER_VIDEO)
-                mFragment = new VideoBrowserFragment();
-            else if (type == MainTvActivity.HEADER_CATEGORIES)
-                if (getIntent().getLongExtra(MusicFragment.AUDIO_CATEGORY, MusicFragment.CATEGORY_SONGS) == MusicFragment.CATEGORY_SONGS &&
-                    VLCApplication.getMLInstance().getAudioCount() > GRID_LIMIT) {
+            if (type == Constants.HEADER_VIDEO) {
+                final String group = getIntent().getStringExtra(Constants.KEY_GROUP);
+                if (group != null) {
+                    mFragment = new VideosFragment();
+                    final Bundle args = new Bundle(1);
+                    args.putString(Constants.KEY_GROUP, group);
+                    ((Fragment)mFragment).setArguments(args);
+                } else if (VLCApplication.getMLInstance().getVideoCount() > GRID_LIMIT) mFragment = new VideoBrowserFragment();
+                else mFragment = new VideosFragment();
+            }
+            else if (type == Constants.HEADER_CATEGORIES) {
+                final long audioCategory = getIntent().getLongExtra(Constants.AUDIO_CATEGORY, Constants.CATEGORY_SONGS);
+                if (audioCategory == Constants.CATEGORY_SONGS &&
+                        VLCApplication.getMLInstance().getAudioCount() > GRID_LIMIT) {
                     mFragment = new SongsBrowserFragment();
                 } else {
-                    mFragment = new MusicFragment();
-                    Bundle args = new Bundle();
-                    args.putParcelable(MusicFragment.AUDIO_ITEM, getIntent().getParcelableExtra(MusicFragment.AUDIO_ITEM));
-                    ((Fragment)mFragment).setArguments(args);
+                    if (audioCategory == Constants.CATEGORY_ARTISTS) mFragment = new ArtistsFragment();
+                    else if (audioCategory == Constants.CATEGORY_ALBUMS) mFragment = new AlbumsFragment();
+                    else if (audioCategory == Constants.CATEGORY_GENRES) mFragment = new GenresFragment();
+                    else mFragment = new MusicFragment();
+                    final Bundle args = new Bundle();
+                    args.putParcelable(Constants.AUDIO_ITEM, getIntent().getParcelableExtra(Constants.AUDIO_ITEM));
+                    ((Fragment) mFragment).setArguments(args);
                 }
-            else if (type == MainTvActivity.HEADER_NETWORK) {
+            } else if (type == Constants.HEADER_NETWORK) {
                 Uri uri = getIntent().getData();
-                if (uri == null)
-                    uri = getIntent().getParcelableExtra(SortedBrowserFragment.KEY_URI);
-                if (uri == null)
-                    mFragment = new BrowserGridFragment();
-                else
-                    mFragment = new NetworkBrowserFragment();
-            } else if (type == MainTvActivity.HEADER_DIRECTORIES)
+                if (uri == null) uri = getIntent().getParcelableExtra(Constants.KEY_URI);
+                if (uri == null) mFragment = new BrowserGridFragment();
+                else mFragment = new NetworkBrowserFragment();
+            } else if (type == Constants.HEADER_DIRECTORIES) {
                 mFragment = new DirectoryBrowserFragment();
-            else {
+            }  else {
                 finish();
                 return;
             }
@@ -92,8 +104,7 @@ public class VerticalGridActivity extends BaseTvActivity implements BrowserActiv
 
     @Override
     public void onNetworkConnectionChanged(boolean connected) {
-        if (mFragment instanceof NetworkBrowserFragment)
-            mFragment.updateList();
+        if (mFragment instanceof NetworkBrowserFragment) refresh();
     }
 
     public boolean onKeyDown(int keyCode, KeyEvent event) {
@@ -123,5 +134,9 @@ public class VerticalGridActivity extends BaseTvActivity implements BrowserActiv
                 mEmptyView.setVisibility(empty ? View.VISIBLE : View.GONE);
             }
         });
+    }
+    
+    public void sort(View v) {
+        ((Sortable)mFragment).sort(v);
     }
 }

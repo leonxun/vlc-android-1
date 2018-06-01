@@ -31,7 +31,6 @@ import android.support.v7.preference.TwoStatePreference;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.libvlc.util.HWDecoderUtil;
-import org.videolan.vlc.PlaybackService;
 import org.videolan.vlc.R;
 import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.VLCInstance;
@@ -74,14 +73,17 @@ public class PreferencesAudio extends BasePreferenceFragment implements SharedPr
     }
 
     @Override
+    public void onStop() {
+        super.onStop();
+        getPreferenceScreen().getSharedPreferences().unregisterOnSharedPreferenceChangeListener(this);
+    }
+
+    @Override
     public boolean onPreferenceTreeClick(Preference preference) {
         if (preference.getKey() == null) return false;
         switch (preference.getKey()){
             case "enable_headset_detection":
                 ((PreferencesActivity)getActivity()).detectHeadset(((TwoStatePreference) preference).isChecked());
-                return true;
-            case "enable_steal_remote_control":
-                PlaybackService.Client.restartService(getActivity());
                 return true;
         }
         return super.onPreferenceTreeClick(preference);

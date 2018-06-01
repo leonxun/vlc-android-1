@@ -23,8 +23,11 @@
 
 package org.videolan.vlc.gui.browser;
 
+import android.arch.lifecycle.ViewModelProviders;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentActivity;
 import android.support.v7.app.AlertDialog;
@@ -32,6 +35,7 @@ import android.support.v7.widget.AppCompatEditText;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.MenuItem;
+import android.view.View;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.media.DummyItem;
@@ -47,11 +51,12 @@ import org.videolan.vlc.util.AndroidDevices;
 import org.videolan.vlc.util.CustomDirectories;
 import org.videolan.vlc.util.FileUtils;
 import org.videolan.vlc.util.Strings;
+import org.videolan.vlc.util.WorkersKt;
+import org.videolan.vlc.viewmodels.browser.FileBrowserProvider;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.List;
 
 public class FileBrowserFragment extends BaseBrowserFragment {
 
@@ -60,6 +65,17 @@ public class FileBrowserFragment extends BaseBrowserFragment {
     @Override
     protected Fragment createFragment() {
         return new FileBrowserFragment();
+    }
+
+    @Override
+    public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        setupBrowser();
+    }
+
+    protected void setupBrowser() {
+        if (mRoot) mProvider = ViewModelProviders.of(requireActivity(), new FileBrowserProvider.Factory(null, mShowHiddenFiles)).get(FileBrowserProvider.class);
+        else mProvider = ViewModelProviders.of(this, new FileBrowserProvider.Factory(mMrl, mShowHiddenFiles)).get(FileBrowserProvider.class);
     }
 
     public String getTitle() {
@@ -93,7 +109,7 @@ public class FileBrowserFragment extends BaseBrowserFragment {
         final String internalmemoryTitle = getString(R.string.internal_memory);
         final String browserStorage = getString(R.string.browser_storages);
         final String quickAccess = getString(R.string.browser_quick_access);
-        VLCApplication.runBackground(new Runnable() {
+        WorkersKt.runBackground(new Runnable() {
             @Override
             public void run() {
                 final String storages[] = AndroidDevices.getMediaDirectories();
@@ -147,7 +163,7 @@ public class FileBrowserFragment extends BaseBrowserFragment {
                         devices.add(whatsapp);
                     }
                 }
-                VLCApplication.runOnMainThread(new Runnable() {
+                WorkersKt.runOnMainThread(new Runnable() {
                     @Override
                     public void run() {
                         mAdapter.update(devices);
@@ -168,9 +184,6 @@ public class FileBrowserFragment extends BaseBrowserFragment {
         final Context context = getActivity();
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         final AppCompatEditText input = new AppCompatEditText(context);
-        if (!AndroidUtil.isHoneycombOrLater) {
-            input.setTextColor(getResources().getColor(R.color.grey50));
-        }
         input.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         builder.setTitle(R.string.add_custom_path);
         builder.setMessage(R.string.add_custom_path_description);
@@ -204,10 +217,10 @@ public class FileBrowserFragment extends BaseBrowserFragment {
                 Storage storage = (Storage) mAdapter.getItem(position);
                 MediaDatabase.getInstance().recursiveRemoveDir(storage.getUri().getPath());
                 CustomDirectories.removeCustomDirectory(storage.getUri().getPath());
-                mAdapter.removeItem(position);
+                mProvider.remove(storage);
                 ((AudioPlayerContainerActivity)getActivity()).updateLib();
                 return true;
-        }else
+        } else
             return super.handleContextItemSelected(item, position);
     }
 

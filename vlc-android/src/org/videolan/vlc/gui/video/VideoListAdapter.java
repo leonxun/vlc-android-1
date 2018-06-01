@@ -32,8 +32,6 @@ import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Filter;
-import android.widget.Filterable;
 import android.widget.ImageView;
 
 import org.videolan.libvlc.util.AndroidUtil;
@@ -42,37 +40,30 @@ import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.vlc.BR;
 import org.videolan.vlc.R;
-import org.videolan.vlc.SortableAdapter;
 import org.videolan.vlc.VLCApplication;
-import org.videolan.vlc.gui.helpers.AsyncImageLoader;
+import org.videolan.vlc.gui.DiffUtilAdapter;
+import org.videolan.vlc.gui.helpers.ImageLoaderKt;
 import org.videolan.vlc.gui.helpers.SelectorViewHolder;
+import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.interfaces.IEventsHandler;
 import org.videolan.vlc.media.MediaGroup;
+import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.MediaItemDiffCallback;
-import org.videolan.vlc.util.MediaItemFilter;
-import org.videolan.vlc.util.MediaLibraryItemComparator;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
-public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAdapter.ViewHolder> implements Filterable {
+public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAdapter.ViewHolder> {
 
     public final static String TAG = "VLC/VideoListAdapter";
 
-    final static int UPDATE_SELECTION = 0;
-    final static int UPDATE_THUMB = 1;
-    final static int UPDATE_TIME = 2;
-    final static int UPDATE_SEEN = 3;
-
     private boolean mListMode = false;
     private IEventsHandler mEventsHandler;
-    private List<MediaWrapper> mOriginalData = null;
-    private final ItemFilter mFilter = new ItemFilter();
     private int mSelectionCount = 0;
     private int mGridCardWidth = 0;
 
-    private boolean mIsSeenMediaMarkerVisible = true;
+    private boolean mIsSeenMediaMarkerVisible;
 
     VideoListAdapter(IEventsHandler eventsHandler) {
         super();
@@ -86,7 +77,7 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
         final LayoutInflater inflater = (LayoutInflater) parent.getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         final ViewDataBinding binding = DataBindingUtil.inflate(inflater, mListMode ? R.layout.video_list_card : R.layout.video_grid_card, parent, false);
         if (!mListMode) {
-            GridLayoutManager.LayoutParams params = (GridLayoutManager.LayoutParams) binding.getRoot().getLayoutParams();
+            final GridLayoutManager.LayoutParams params = (GridLayoutManager.LayoutParams) binding.getRoot().getLayoutParams();
             params.width = mGridCardWidth;
             params.height = params.width*10/16;
             binding.getRoot().setLayoutParams(params);
@@ -107,20 +98,19 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
 
     @Override
     public void onBindViewHolder(ViewHolder holder, int position, List<Object> payloads) {
-        if (payloads.isEmpty())
-            onBindViewHolder(holder, position);
+        if (payloads.isEmpty()) onBindViewHolder(holder, position);
         else {
             final MediaWrapper media = getDataset().get(position);
             for (Object data : payloads) {
                 switch ((int) data) {
-                    case UPDATE_THUMB:
-                        AsyncImageLoader.loadPicture(holder.thumbView, media);
+                    case Constants.UPDATE_THUMB:
+                        ImageLoaderKt.loadImage(holder.thumbView, media);
                         break;
-                    case UPDATE_TIME:
-                    case UPDATE_SEEN:
+                    case Constants.UPDATE_TIME:
+                    case Constants.UPDATE_SEEN:
                         fillView(holder, media);
                         break;
-                    case UPDATE_SELECTION:
+                    case Constants.UPDATE_SELECTION:
                         holder.selectView(media.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
                         break;
                 }
@@ -130,11 +120,7 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
 
     @Override
     public void onViewRecycled(ViewHolder holder) {
-        holder.binding.setVariable(BR.cover, AsyncImageLoader.DEFAULT_COVER_VIDEO_DRAWABLE);
-    }
-
-    public boolean isEmpty() {
-        return peekLast().size() == 0;
+        holder.binding.setVariable(BR.cover, UiTools.Resources.DEFAULT_COVER_VIDEO_DRAWABLE);
     }
 
     @Nullable
@@ -144,25 +130,6 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
 
     private boolean isPositionValid(int position) {
         return position >= 0 && position < getDataset().size();
-    }
-
-    @MainThread
-    public void add(MediaWrapper item) {
-        final List<MediaWrapper> list = new ArrayList<>(peekLast());
-        list.add(item);
-        //Force adapter to sort items.
-        if (sMediaComparator.sortBy == MediaLibraryItemComparator.SORT_DEFAULT) sMediaComparator.sortBy = getDefaultSort();
-        update(list);
-    }
-
-    @MainThread
-    public int remove(MediaWrapper item) {
-        final List<MediaWrapper> refList = new ArrayList<>(peekLast());
-        final int position = refList.indexOf(item);
-        if (position < 0 || position >= refList.size()) return -1;
-        refList.remove(position);
-        update(refList);
-        return position;
     }
 
     public boolean contains(MediaWrapper mw) {
@@ -206,7 +173,6 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
     @MainThread
     public void clear() {
         update(new ArrayList<MediaWrapper>());
-        mOriginalData = null;
     }
 
     private void fillView(ViewHolder holder, MediaWrapper media) {
@@ -217,26 +183,22 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
         long seen = 0L;
 
         if (media.getType() == MediaWrapper.TYPE_GROUP) {
-            MediaGroup mediaGroup = (MediaGroup) media;
-            final int size = mediaGroup.size();
-            text = VLCApplication.getAppResources().getQuantityString(R.plurals.videos_quantity, size, size);
+            text = media.getDescription();
         } else {
             /* Time / Duration */
+            resolution = Tools.getResolution(media);
             if (media.getLength() > 0) {
                 final long lastTime = media.getTime();
                 if (lastTime > 0) {
-                    text = Tools.getProgressText(media);
                     max = (int) (media.getLength() / 1000);
                     progress = (int) (lastTime / 1000);
-                } else {
-                    text = Tools.millisToText(media.getLength());
                 }
-            }
-            resolution = Tools.getResolution(media);
+                if (TextUtils.isEmpty(resolution)) text = Tools.millisToText(media.getLength());
+                else text = Tools.millisToText(media.getLength())+"  |  "+resolution;
+            } else text = resolution;
             seen = mIsSeenMediaMarkerVisible ? media.getSeen() : 0L;
         }
 
-        holder.binding.setVariable(BR.resolution, resolution);
         holder.binding.setVariable(BR.time, text);
         holder.binding.setVariable(BR.max, max);
         holder.binding.setVariable(BR.progress, progress);
@@ -293,7 +255,7 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
             super(binding);
             thumbView = itemView.findViewById(R.id.ml_item_thumbnail);
             binding.setVariable(BR.holder, this);
-            binding.setVariable(BR.cover, AsyncImageLoader.DEFAULT_COVER_VIDEO_DRAWABLE);
+            binding.setVariable(BR.cover, UiTools.Resources.DEFAULT_COVER_VIDEO_DRAWABLE);
             if (AndroidUtil.isMarshMallowOrLater) itemView.setOnContextClickListener(new View.OnContextClickListener() {
                 @Override
                 public boolean onContextClick(View v) {
@@ -332,38 +294,6 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
         }
     }
 
-    @Override
-    public Filter getFilter() {
-        return mFilter;
-    }
-
-    @MainThread
-    void restoreList() {
-        if (mOriginalData != null) {
-            update(new ArrayList<>(mOriginalData));
-            mOriginalData = null;
-        }
-    }
-
-    private class ItemFilter extends MediaItemFilter {
-
-        @Override
-        protected List<MediaWrapper> initData() {
-            if (mOriginalData == null) {
-                mOriginalData = new ArrayList<>(getDataset().size());
-                for (int i = 0; i < getDataset().size(); ++i)
-                    mOriginalData.add(getDataset().get(i));
-            }
-            return mOriginalData;
-        }
-
-        @Override
-        protected void publishResults(CharSequence charSequence, FilterResults filterResults) {
-            //noinspection unchecked
-            update((List<MediaWrapper>) filterResults.values);
-        }
-    }
-
     @BindingAdapter({"time", "resolution"})
     public static void setLayoutHeight(View view, String time, String resolution) {
         final ViewGroup.LayoutParams layoutParams = view.getLayoutParams();
@@ -380,7 +310,6 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
 
     @Override
     protected void onUpdateFinished() {
-        super.onUpdateFinished();
         mEventsHandler.onUpdateFinished(null);
     }
 
@@ -408,11 +337,11 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
             final MediaWrapper oldItem = oldList.get(oldItemPosition);
             final MediaWrapper newItem = newList.get(newItemPosition);
             if (oldItem.getTime() != newItem.getTime())
-                return UPDATE_TIME;
+                return Constants.UPDATE_TIME;
             if (!TextUtils.equals(oldItem.getArtworkMrl(), newItem.getArtworkMrl()))
-                return UPDATE_THUMB;
+                return Constants.UPDATE_THUMB;
             else
-                return UPDATE_SEEN;
+                return Constants.UPDATE_SEEN;
         }
     }
 
@@ -421,14 +350,7 @@ public class VideoListAdapter extends SortableAdapter<MediaWrapper, VideoListAda
     }
 
     @Override
-    protected boolean isSortAllowed(int sort) {
-        switch (sort) {
-            case MediaLibraryItemComparator.SORT_BY_TITLE:
-            case MediaLibraryItemComparator.SORT_BY_DATE:
-            case MediaLibraryItemComparator.SORT_BY_LENGTH:
-                return true;
-            default:
-                return false;
-        }
+    protected boolean detectMoves() {
+        return true;
     }
 }

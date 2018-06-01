@@ -1,6 +1,8 @@
 package org.videolan.medialibrary;
 
 import android.Manifest;
+import android.arch.lifecycle.LiveData;
+import android.arch.lifecycle.MutableLiveData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -16,7 +18,6 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import org.videolan.libvlc.LibVLC;
-import org.videolan.libvlc.util.VLCUtil;
 import org.videolan.medialibrary.interfaces.DevicesDiscoveryCb;
 import org.videolan.medialibrary.interfaces.EntryPointsEventsCb;
 import org.videolan.medialibrary.interfaces.MediaAddedCb;
@@ -35,9 +36,23 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 
-public class Medialibrary {
+import videolan.org.commontools.LiveEvent;
 
+public class Medialibrary {
     private static final String TAG = "VLC/JMedialibrary";
+
+    // Sorting
+    public final static int SORT_DEFAULT = 0;
+    public final static int SORT_ALPHA = 1;
+    public final static int SORT_DURATION = 2;
+    public final static int SORT_INSERTIONDATE = 3;
+    public final static int SORT_LASTMODIFICATIONDATE = 4;
+    public final static int SORT_RELEASEDATE = 5;
+    public final static int SORT_FILESIZE = 6;
+    public final static int SORT_ARTIST = 7;
+    public final static int SORT_PLAYCOUNT = 8;
+    public final static int SORT_ALBUM = 9;
+    public final static int SORT_FILENAME = 10;
 
     public static final int FLAG_MEDIA_UPDATED_AUDIO        = 1 << 0;
     public static final int FLAG_MEDIA_UPDATED_AUDIO_EMPTY  = 1 << 1;
@@ -69,6 +84,8 @@ public class Medialibrary {
     private ArtistsModifiedCb mArtistsModifiedCb = null;
     private AlbumsAddedCb mAlbumsAddedCb = null;
     private AlbumsModifiedCb mAlbumsModifiedCb = null;
+    private final List<OnMedialibraryReadyListener> onMedialibraryReadyListeners = new ArrayList<>();
+    private volatile boolean isMedialibraryStarted = false;
     private final List<DevicesDiscoveryCb> devicesDiscoveryCbList = new ArrayList<>();
     private final List<EntryPointsEventsCb> entryPointsEventsCbList = new ArrayList<>();
     private static Context sContext;
@@ -80,8 +97,7 @@ public class Medialibrary {
     }
 
     public int init(Context context) {
-        if (context == null)
-            return ML_INIT_FAILED;
+        if (context == null) return ML_INIT_FAILED;
         sContext = context;
         File extFilesDir = context.getExternalFilesDir(null);
         File dbDirectory = context.getDir("db", Context.MODE_PRIVATE);
@@ -96,6 +112,16 @@ public class Medialibrary {
 
     public void start() {
         nativeStart();
+        isMedialibraryStarted = true;
+        synchronized (onMedialibraryReadyListeners) {
+            for (OnMedialibraryReadyListener listener : onMedialibraryReadyListeners) listener.onMedialibraryReady();
+        }
+        nativeSetMediaAddedCbFlag(FLAG_MEDIA_ADDED_AUDIO|FLAG_MEDIA_ADDED_VIDEO);
+        nativeSetMediaUpdatedCbFlag(FLAG_MEDIA_UPDATED_AUDIO|FLAG_MEDIA_UPDATED_VIDEO);
+    }
+
+    public boolean isStarted() {
+        return isMedialibraryStarted;
     }
 
     public void banFolder(@NonNull String path) {
@@ -147,6 +173,7 @@ public class Medialibrary {
         super.finalize();
     }
 
+    @NonNull
     public static Medialibrary getInstance() {
         return instance;
     }
@@ -157,6 +184,11 @@ public class Medialibrary {
     }
 
     @WorkerThread
+    public MediaWrapper[] getVideos(int sort, boolean desc) {
+        return mIsInitiated ? nativeGetSortedVideos(sort, desc) : new MediaWrapper[0];
+    }
+
+    @WorkerThread
     public MediaWrapper[] getRecentVideos() {
         return mIsInitiated ? nativeGetRecentVideos() : new MediaWrapper[0];
     }
@@ -164,6 +196,11 @@ public class Medialibrary {
     @WorkerThread
     public MediaWrapper[] getAudio() {
         return mIsInitiated ? nativeGetAudio() : new MediaWrapper[0];
+    }
+
+    @WorkerThread
+    public MediaWrapper[] getAudio(int sort, boolean desc) {
+        return mIsInitiated ? nativeGetSortedAudio(sort, desc) : new MediaWrapper[0];
     }
 
     @WorkerThread
@@ -179,9 +216,15 @@ public class Medialibrary {
         return mIsInitiated ? nativeGetAudioCount() : 0;
     }
 
+
     @WorkerThread
     public Album[] getAlbums() {
-        return mIsInitiated ? nativeGetAlbums() : new Album[0];
+        return getAlbums(Medialibrary.SORT_DEFAULT, false);
+    }
+
+    @WorkerThread
+    public Album[] getAlbums(int sort, boolean desc) {
+        return mIsInitiated ? nativeGetAlbums(sort, desc) : new Album[0];
     }
 
     @WorkerThread
@@ -191,7 +234,12 @@ public class Medialibrary {
 
     @WorkerThread
     public Artist[] getArtists(boolean all) {
-        return mIsInitiated ? nativeGetArtists(all) : new Artist[0];
+        return getArtists(all, Medialibrary.SORT_DEFAULT, false);
+    }
+
+    @WorkerThread
+    public Artist[] getArtists(boolean all, int sort, boolean desc) {
+        return mIsInitiated ? nativeGetArtists(all, sort, desc) : new Artist[0];
     }
 
     public Artist getArtist(long artistId) {
@@ -200,7 +248,12 @@ public class Medialibrary {
 
     @WorkerThread
     public Genre[] getGenres() {
-        return mIsInitiated ? nativeGetGenres() : new Genre[0];
+        return getGenres(Medialibrary.SORT_DEFAULT, false);
+    }
+
+    @WorkerThread
+    public Genre[] getGenres(int sort, boolean desc) {
+        return mIsInitiated ? nativeGetGenres(sort, desc) : new Genre[0];
     }
 
     public Genre getGenre(long genreId) {
@@ -209,7 +262,12 @@ public class Medialibrary {
 
     @WorkerThread
     public Playlist[] getPlaylists() {
-        return mIsInitiated ? nativeGetPlaylists() : new Playlist[0];
+        return getPlaylists(Medialibrary.SORT_DEFAULT, false);
+    }
+
+    @WorkerThread
+    public Playlist[] getPlaylists(int sort, boolean desc) {
+        return mIsInitiated ? nativeGetPlaylists(sort, desc) : new Playlist[0];
     }
 
     public Playlist getPlaylist(long playlistId) {
@@ -231,8 +289,7 @@ public class Medialibrary {
     }
 
     public void reload() {
-        if (mIsInitiated && !isWorking())
-            nativeReload();
+        if (mIsInitiated && !isWorking()) nativeReload();
     }
 
     public void reload(String entryPoint) {
@@ -289,6 +346,10 @@ public class Medialibrary {
         return mIsInitiated && !TextUtils.isEmpty(vlcMrl) ? nativeAddMedia(vlcMrl) : null;
     }
 
+    public void requestThumbnail(long id) {
+        if (mIsInitiated) nativeRequestThumbnail(id);
+    }
+
     public long getId() {
         return mInstanceID;
     }
@@ -341,8 +402,7 @@ public class Medialibrary {
 
     @SuppressWarnings("unused")
     public void onArtistsAdded() {
-        if (mArtistsAddedCb != null)
-            mArtistsAddedCb.onArtistsAdded();
+        if (mArtistsAddedCb != null) mArtistsAddedCb.onArtistsAdded();
     }
 
     @SuppressWarnings("unused")
@@ -426,6 +486,11 @@ public class Medialibrary {
     public void onBackgroundTasksIdleChanged(boolean isIdle) {
         mIsWorking = !isIdle;
         LocalBroadcastManager.getInstance(sContext).sendBroadcast(new Intent(ACTION_IDLE).putExtra(STATE_IDLE, isIdle));
+        if (isIdle) {
+            synchronized (onMedialibraryReadyListeners) {
+                for (OnMedialibraryReadyListener listener : onMedialibraryReadyListeners) listener.onMedialibraryIdle();
+            }
+        }
     }
 
     @SuppressWarnings("unused")
@@ -473,6 +538,12 @@ public class Medialibrary {
         }
     }
 
+    public static LiveData<MediaWrapper> lastThumb = new LiveEvent<>();
+    @SuppressWarnings({"unused", "unchecked"})
+    void onMediaThumbnailReady(MediaWrapper media, boolean success) {
+        if (success) ((MutableLiveData)lastThumb).postValue(media);
+    }
+
     public void setMediaUpdatedCb(MediaUpdatedCb mediaUpdatedCb, int flags) {
         if (!mIsInitiated)
             return;
@@ -494,31 +565,26 @@ public class Medialibrary {
     }
 
     public void setArtistsAddedCb(ArtistsAddedCb artistsAddedCb) {
-        if (!mIsInitiated)
-            return;
+        if (!mIsInitiated) return;
         this.mArtistsAddedCb = artistsAddedCb;
-        nativeSetMediaAddedCbFlag(artistsAddedCb == null ? 0 : FLAG_MEDIA_ADDED_AUDIO_EMPTY);
     }
 
     public void setArtistsModifiedCb(ArtistsModifiedCb artistsModifiedCb) {
         if (!mIsInitiated)
             return;
         this.mArtistsModifiedCb = artistsModifiedCb;
-        nativeSetMediaUpdatedCbFlag(artistsModifiedCb == null ? 0 : FLAG_MEDIA_UPDATED_AUDIO_EMPTY);
     }
 
     public void setAlbumsAddedCb(AlbumsAddedCb AlbumsAddedCb) {
         if (!mIsInitiated)
             return;
         this.mAlbumsAddedCb = AlbumsAddedCb;
-        nativeSetMediaAddedCbFlag(AlbumsAddedCb == null ? 0 : FLAG_MEDIA_ADDED_AUDIO_EMPTY);
     }
 
     public void setAlbumsModifiedCb(AlbumsModifiedCb AlbumsModifiedCb) {
         if (!mIsInitiated)
             return;
         this.mAlbumsModifiedCb = AlbumsModifiedCb;
-        nativeSetMediaUpdatedCbFlag(AlbumsModifiedCb == null ? 0 : FLAG_MEDIA_UPDATED_AUDIO_EMPTY);
     }
 
     public SearchAggregate search(String query) {
@@ -555,6 +621,19 @@ public class Medialibrary {
     public void removeDeviceDiscoveryCb(DevicesDiscoveryCb cb) {
         synchronized (devicesDiscoveryCbList) {
             devicesDiscoveryCbList.remove(cb);
+        }
+    }
+
+    public void addOnMedialibraryReadyListener(OnMedialibraryReadyListener cb) {
+        synchronized (onMedialibraryReadyListeners) {
+            if (!onMedialibraryReadyListeners.contains(cb))
+                onMedialibraryReadyListeners.add(cb);
+        }
+    }
+
+    public void removeOnMedialibraryReadyListener(OnMedialibraryReadyListener cb) {
+        synchronized (onMedialibraryReadyListeners) {
+            onMedialibraryReadyListeners.remove(cb);
         }
     }
 
@@ -634,18 +713,20 @@ public class Medialibrary {
     private native MediaWrapper nativeGetMediaFromMrl(String mrl);
     private native MediaWrapper nativeAddMedia(String mrl);
     private native MediaWrapper[] nativeGetVideos();
+    private native MediaWrapper[] nativeGetSortedVideos(int sort, boolean desc);
     private native MediaWrapper[] nativeGetRecentVideos();
     private native MediaWrapper[] nativeGetAudio();
+    private native MediaWrapper[] nativeGetSortedAudio(int sort, boolean desc);
     private native MediaWrapper[] nativeGetRecentAudio();
     private native int nativeGetVideoCount();
     private native int nativeGetAudioCount();
-    private native Album[] nativeGetAlbums();
+    private native Album[] nativeGetAlbums(int sort, boolean desc);
     private native Album nativeGetAlbum(long albumtId);
-    private native Artist[] nativeGetArtists(boolean all);
+    private native Artist[] nativeGetArtists(boolean all, int sort, boolean desc);
     private native Artist nativeGetArtist(long artistId);
-    private native Genre[] nativeGetGenres();
+    private native Genre[] nativeGetGenres(int sort, boolean desc);
     private native Genre nativeGetGenre(long genreId);
-    private native Playlist[] nativeGetPlaylists();
+    private native Playlist[] nativeGetPlaylists(int sort, boolean desc);
     private native Playlist nativeGetPlaylist(long playlistId);
     private native Playlist nativePlaylistCreate(String name);
     private native void nativePauseBackgroundOperations();
@@ -663,6 +744,7 @@ public class Medialibrary {
     private native Album[] nativeSearchAlbum(String query);
     private native Genre[] nativeSearchGenre(String query);
     private native Playlist[] nativeSearchPlaylist(String query);
+    private native void nativeRequestThumbnail(long mediaId);
 
     private boolean canReadStorage(Context context) {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || ContextCompat.checkSelfPermission(context,
@@ -683,5 +765,10 @@ public class Medialibrary {
 
     public interface AlbumsModifiedCb {
         void onAlbumsModified();
+    }
+
+    public interface OnMedialibraryReadyListener {
+        void onMedialibraryReady();
+        void onMedialibraryIdle();
     }
 }

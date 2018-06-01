@@ -73,19 +73,8 @@ class StorageBrowserAdapter extends BaseBrowserAdapter {
     }
 
     private boolean hasDiscoveredChildren(String path) {
-        for (String directory : mMediaDirsLocation)
-            if (directory.startsWith(path))
-                return true;
+        for (String directory : mMediaDirsLocation) if (directory.startsWith(path)) return true;
         return false;
-    }
-
-    @MainThread
-    public void addItem(MediaLibraryItem item, boolean top, int position) {
-        if (item.getItemType() == MediaLibraryItem.TYPE_MEDIA)
-            item = new Storage(((MediaWrapper)item).getUri());
-        else if (item.getItemType() != MediaLibraryItem.TYPE_STORAGE)
-            return;
-        super.addItem(item, top, position);
     }
 
     void updateMediaDirs() {
@@ -99,12 +88,10 @@ class StorageBrowserAdapter extends BaseBrowserAdapter {
     }
 
     protected void checkBoxAction(View v, String mrl) {
-       final  ThreeStatesCheckbox tscb = (ThreeStatesCheckbox) v;
+        final ThreeStatesCheckbox tscb = (ThreeStatesCheckbox) v;
         int state = tscb.getState();
-        if (state == ThreeStatesCheckbox.STATE_CHECKED)
-            MedialibraryUtils.addDir(mrl);
-        else
-            MedialibraryUtils.removeDir(mrl);
+        if (state == ThreeStatesCheckbox.STATE_CHECKED) MedialibraryUtils.addDir(mrl);
+        else MedialibraryUtils.removeDir(mrl);
         ((StorageBrowserFragment)fragment).processEvent((CheckBox) v, mrl);
     }
 }
