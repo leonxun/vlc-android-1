@@ -519,6 +519,10 @@ class PlaybackService : MediaBrowserServiceCompat() {
         return Service.START_NOT_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent) {
+        if (settings.getBoolean("audio_task_removed", false)) stopSelf()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
@@ -998,7 +1002,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
      * @param flags LibVLC.MEDIA_* flags
      */
     @JvmOverloads
-    fun playIndex(index: Int, flags: Int = 0) = playlistManager.playIndex(index, flags)
+    fun playIndex(index: Int, flags: Int = 0) = uiJob(false) { playlistManager.playIndex(index, flags) }
 
     @MainThread
     fun flush() {
@@ -1185,7 +1189,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     @MainThread
-    fun setEqualizer(equalizer: MediaPlayer.Equalizer) = playlistManager.player.setEqualizer(equalizer)
+    fun setEqualizer(equalizer: MediaPlayer.Equalizer?) = playlistManager.player.setEqualizer(equalizer)
 
     @MainThread
     fun setVideoScale(scale: Float) = playlistManager.player.setVideoScale(scale)
