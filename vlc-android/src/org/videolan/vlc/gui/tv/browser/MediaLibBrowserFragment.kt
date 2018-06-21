@@ -45,7 +45,7 @@ import org.videolan.vlc.viewmodels.BaseModel
 abstract class MediaLibBrowserFragment<T : BaseModel<out MediaLibraryItem>> : GridFragment(), OnItemViewSelectedListener, OnItemViewClickedListener, Sortable {
     private var mBackgroundManager: BackgroundManager? = null
     private var mSelectedItem: Any? = null
-    lateinit var provider: T
+    lateinit var model: T
     protected var currentItem: MediaLibraryItem? = null
     protected val preferences: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
 
@@ -72,7 +72,7 @@ abstract class MediaLibBrowserFragment<T : BaseModel<out MediaLibraryItem>> : Gr
     }
 
     override fun refresh() {
-        provider.refresh()
+        model.refresh()
     }
 
     protected fun update(list: List<MediaLibraryItem>) {
@@ -88,18 +88,8 @@ abstract class MediaLibBrowserFragment<T : BaseModel<out MediaLibraryItem>> : Gr
 
     override fun onItemClicked(itemViewHolder: Presenter.ViewHolder?, item: Any?,
                                rowViewHolder: RowPresenter.ViewHolder?, row: Row?) {
-//        if (mediaLibraryItem.itemType == MediaLibraryItem.TYPE_MEDIA) {
-//            var position = 0
-//            for (i in mDataList.indices) {
-//                if (mediaLibraryItem.equals(mDataList[i])) {
-//                    position = i
-//                    break
-//                }
-//            }
-//            TvUtil.playAudioList(mContext, mDataList as Array<MediaWrapper>, position)
-//        } else
         TvUtil.openMedia(mContext, item, row)
     }
 
-    override fun getVM(): BaseModel<out MediaLibraryItem> = this.provider
+    override fun getVM(): BaseModel<out MediaLibraryItem> = this.model
 }
