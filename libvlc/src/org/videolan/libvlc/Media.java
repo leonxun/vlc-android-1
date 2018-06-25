@@ -761,12 +761,12 @@ public class Media extends VLCObject<Media.Event> {
          * On Nexus S, the decoder latency seems to be about 7 packets.
          */
         if (!mFileCachingSet) {
-            //addOption(":file-caching=1500");  - leon  reduce cache to 100 for maxwall
-            addOption(":file-caching=100");
+            //addOption(":file-caching=1500");  - leon  reduce cache to 200 for maxwall
+            addOption(":file-caching=200");
         }
         if (!mNetworkCachingSet) {
-            //addOption(":network-caching=100"); - leon  reduce cache to 100 for maxwall
-            addOption(":network-caching=100");
+            //addOption(":network-caching=100"); - leon  reduce cache to 200 for maxwall
+            addOption(":network-caching=200");
         }
 
         final StringBuilder sb = new StringBuilder(":codec=");

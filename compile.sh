@@ -239,7 +239,7 @@ if [ ! -d "vlc" ]; then
     #git clone https://git.videolan.org/git/vlc/vlc-3.0.git vlc
     git clone https://github.com/leonxun/vlc-3.0.git vlc
 	cd vlc
-	git checkout maxwall-4.0.x
+	git checkout maxwall-4.0.8
 	git pull
 	cd ../
     checkfail "vlc source: git clone failed"
