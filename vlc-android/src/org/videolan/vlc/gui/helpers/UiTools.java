@@ -30,8 +30,9 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.content.res.TypedArray;
-import android.databinding.BindingAdapter;
+import androidx.databinding.BindingAdapter;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
@@ -44,14 +45,14 @@ import android.renderscript.Allocation;
 import android.renderscript.Element;
 import android.renderscript.RenderScript;
 import android.renderscript.ScriptIntrinsicBlur;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.RequiresApi;
-import android.support.design.widget.Snackbar;
-import android.support.v4.app.FragmentActivity;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AlertDialog;
-import android.support.v7.app.AppCompatActivity;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import com.google.android.material.snackbar.Snackbar;
+import androidx.fragment.app.FragmentActivity;
+import androidx.core.content.ContextCompat;
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
 import android.text.Html;
 import android.text.TextUtils;
 import android.view.DragAndDropPermissions;
@@ -82,9 +83,12 @@ import org.videolan.vlc.gui.dialogs.SavePlaylistDialog;
 import org.videolan.vlc.media.MediaUtils;
 import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.FileUtils;
-import org.videolan.vlc.viewmodels.BaseModel;
+import org.videolan.vlc.util.LocalePair;
+import org.videolan.vlc.util.Settings;
+import org.videolan.vlc.viewmodels.SortableModel;
 
 import java.util.List;
+import java.util.Locale;
 
 public class UiTools {
     private static final String TAG = "VLC/UiTools";
@@ -113,6 +117,21 @@ public class UiTools {
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     public static void snacker(@NonNull View view, @NonNull String message) {
         Snackbar snack = Snackbar.make(view, message, Snackbar.LENGTH_SHORT);
+        if (AndroidUtil.isLolliPopOrLater)
+            snack.getView().setElevation(view.getResources().getDimensionPixelSize(R.dimen.audio_player_elevation));
+        snack.show();
+    }
+
+    /** Print an on-screen message to alert the user, with undo action */
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public static void snackerConfirm(@NonNull View view, @NonNull String message, @NonNull final Runnable action) {
+        final Snackbar snack = Snackbar.make(view, message, Snackbar.LENGTH_LONG)
+                .setAction(android.R.string.ok, new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        action.run();
+                    }
+                });
         if (AndroidUtil.isLolliPopOrLater)
             snack.getView().setElevation(view.getResources().getDimensionPixelSize(R.dimen.audio_player_elevation));
         snack.show();
@@ -163,7 +182,7 @@ public class UiTools {
      * @return the color id
      */
     public static int getColorFromAttribute(Context context, int attrId) {
-        return VLCApplication.getAppResources().getColor(getResourceFromAttribute(context, attrId));
+        return context.getResources().getColor(getResourceFromAttribute(context, attrId));
     }
     /**
      * Set the alignment mode of the specified TextView with the desired align
@@ -201,23 +220,23 @@ public class UiTools {
         if (v != null) v.setOnClickListener(ocl);
     }
 
-    public static boolean isBlackThemeEnabled() {
-        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext());
+    public static boolean isBlackThemeEnabled(Context context) {
+        final SharedPreferences pref = Settings.INSTANCE.getInstance(context);
         return pref.getBoolean("enable_black_theme", false);
     }
 
     public static void fillAboutView(View v) {
         final TextView link = v.findViewById(R.id.main_link);
-        link.setText(Html.fromHtml(VLCApplication.getAppResources().getString(R.string.about_link)));
+        link.setText(Html.fromHtml(v.getContext().getString(R.string.about_link)));
 
-        final String revision = VLCApplication.getAppResources().getString(R.string.build_revision)+" VLC: "+VLCApplication.getAppResources().getString(R.string.build_vlc_revision);
-        final String builddate = VLCApplication.getAppResources().getString(R.string.build_time);
-        final String builder = VLCApplication.getAppResources().getString(R.string.build_host);
+        final String revision = v.getContext().getString(R.string.build_revision)+" VLC: "+v.getContext().getString(R.string.build_vlc_revision);
+        final String builddate = v.getContext().getString(R.string.build_time);
+        final String builder = v.getContext().getString(R.string.build_host);
 
         final TextView compiled = v.findViewById(R.id.main_compiled);
         compiled.setText(builder + " (" + builddate + ")");
         final TextView textview_rev = v.findViewById(R.id.main_revision);
-        textview_rev.setText(VLCApplication.getAppResources().getString(R.string.revision) + " " + revision + " (" + builddate + ") " + BuildConfig.FLAVOR_abi);
+        textview_rev.setText(v.getContext().getString(R.string.revision) + " " + revision + " (" + builddate + ") ");
 
         final ImageView logo = v.findViewById(R.id.logo);
         logo.setOnClickListener(new View.OnClickListener() {
@@ -327,7 +346,7 @@ public class UiTools {
     public static void updateSortTitles(MediaBrowserFragment sortable) {
         final Menu menu = sortable.getMenu();
         if (menu == null) return;
-        final BaseModel model = sortable.getViewModel();
+        final SortableModel model = sortable.getViewModel();
         final int sort = model.getSort();
         final boolean desc = model.getDesc();
         MenuItem item = menu.findItem(R.id.ml_menu_sortby_name);
@@ -342,6 +361,8 @@ public class UiTools {
         if (item != null) item.setTitle(sort == Medialibrary.SORT_DURATION && !desc ? R.string.sortby_length_desc : R.string.sortby_length);
         item = menu.findItem(R.id.ml_menu_sortby_date);
         if (item != null) item.setTitle(sort == Medialibrary.SORT_RELEASEDATE && !desc ? R.string.sortby_date_desc : R.string.sortby_date);
+        item = menu.findItem(R.id.ml_menu_sortby_last_modified);
+        if (item != null) item.setTitle(sort == Medialibrary.SORT_RELEASEDATE && !desc ? R.string.sortby_last_modified_date_desc : R.string.sortby_last_modified_date);
 //        item = menu.findItem(R.id.ml_menu_sortby_number); TODO sort by track number
 //        if (item != null) item.setTitle(sort == Medialibrary.SORT_ && !desc ? R.string.sortby_number_desc : R.string.sortby_number);
 
@@ -352,11 +373,13 @@ public class UiTools {
                 .setMessage(R.string.exit_app_msg)
                 .setTitle(R.string.exit_app)
                 .setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
             public void onClick(DialogInterface dialog, int id) {
                 activity.finish();
             }
         })
                 .setNegativeButton(R.string.cancel, new DialogInterface.OnClickListener() {
+            @Override
             public void onClick(DialogInterface dialog, int id) {
                 dialog.dismiss();
             }
@@ -368,7 +391,7 @@ public class UiTools {
         final String uuid = FileUtils.getFileNameFromPath(path);
         final String deviceName = FileUtils.getStorageTag(uuid);
         final String message = String.format(activity.getString(R.string.ml_external_storage_msg), deviceName != null ? deviceName : uuid);
-        final Intent serviceInent = new Intent(Constants.ACTION_DISCOVER_DEVICE, null, activity, MediaParsingService.class)
+        final Intent si = new Intent(Constants.ACTION_DISCOVER_DEVICE, null, activity, MediaParsingService.class)
                 .putExtra(Constants.EXTRA_PATH, path);
         if (activity instanceof AppCompatActivity) {
             AlertDialog.Builder builder = new AlertDialog.Builder(activity)
@@ -376,14 +399,15 @@ public class UiTools {
                     .setCancelable(false)
                     .setMessage(message)
                     .setPositiveButton(R.string.ml_external_storage_accept, new DialogInterface.OnClickListener() {
+                        @Override
                         public void onClick(DialogInterface dialog, int id) {
-                            if (activity != null)
-                                activity.startService(serviceInent);
+                            if (activity != null) ContextCompat.startForegroundService(activity, si);
                         }
                     })
                     .setNegativeButton(R.string.ml_external_storage_decline, new DialogInterface.OnClickListener() {
+                        @Override
                         public void onClick(DialogInterface dialog, int id) {
-                            PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext())
+                            Settings.INSTANCE.getInstance(activity)
                                     .edit()
                                     .putBoolean("ignore_"+ uuid, true)
                                     .apply();
@@ -397,14 +421,15 @@ public class UiTools {
                     .setCancelable(false)
                 .setMessage(message)
                 .setPositiveButton(R.string.ml_external_storage_accept, new DialogInterface.OnClickListener() {
+                    @Override
                     public void onClick(DialogInterface dialog, int id) {
-                        if (activity != null)
-                            activity.startService(serviceInent);
+                        if (activity != null) ContextCompat.startForegroundService(activity, si);
                     }
                 })
                 .setNegativeButton(R.string.ml_external_storage_decline, new DialogInterface.OnClickListener() {
+                    @Override
                     public void onClick(DialogInterface dialog, int id) {
-                        PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext())
+                        Settings.INSTANCE.getInstance(activity)
                                 .edit()
                                 .putBoolean("ignore_"+ uuid, true)
                                 .apply();
@@ -431,12 +456,12 @@ public class UiTools {
                             final DragAndDropPermissions permissions = activity.requestDragAndDropPermissions(event);
                             if (permissions != null)  {
                                 final ClipData.Item item = clipData.getItemAt(i);
-                                if (item.getUri() != null) MediaUtils.openUri(activity, item.getUri());
+                                if (item.getUri() != null) MediaUtils.INSTANCE.openUri(activity, item.getUri());
                                 else if (item.getText() != null) {
                                     final Uri uri = Uri.parse(item.getText().toString());
                                     final MediaWrapper media = new MediaWrapper(uri);
                                     if (!"file".equals(uri.getScheme())) media.setType(MediaWrapper.TYPE_STREAM);
-                                    MediaUtils.openMedia(activity, media);
+                                    MediaUtils.INSTANCE.openMedia(activity, media);
                                 }
                                 return true;
                             }
@@ -457,4 +482,70 @@ public class UiTools {
         winParams.rotationAnimation = AndroidUtil.isOOrLater ? WindowManager.LayoutParams.ROTATION_ANIMATION_SEAMLESS : WindowManager.LayoutParams.ROTATION_ANIMATION_JUMPCUT;
         win.setAttributes(winParams);
     }
+
+    public static void setLocale(Context context) {
+        // Are we using advanced debugging - locale?
+        String p = VLCApplication.getLocale();
+        if (!p.equals("")) {
+            Locale locale;
+            // workaround due to region code
+            if (p.equals("zh-TW")) {
+                locale = Locale.TRADITIONAL_CHINESE;
+            } else if(p.startsWith("zh")) {
+                locale = Locale.CHINA;
+            } else if(p.equals("pt-BR")) {
+                locale = new Locale("pt", "BR");
+            } else if(p.equals("bn-IN") || p.startsWith("bn")) {
+                locale = new Locale("bn", "IN");
+            } else {
+                /**
+                 * Avoid a crash of
+                 * java.lang.AssertionError: couldn't initialize LocaleData for locale
+                 * if the user enters nonsensical region codes.
+                 */
+                if(p.contains("-")) p = p.substring(0, p.indexOf('-'));
+                locale = new Locale(p);
+            }
+            Locale.setDefault(locale);
+            final Configuration config = new Configuration();
+            config.locale = locale;
+            context.getResources().updateConfiguration(config,
+                    context.getResources().getDisplayMetrics());
+        }
+    }
+
+    public static void restartDialog(Context context) {
+        new AlertDialog.Builder(context)
+                .setTitle(context.getResources().getString(R.string.restart_vlc))
+                .setMessage(context.getResources().getString(R.string.restart_message))
+                .setPositiveButton(R.string.restart_message_OK, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        android.os.Process.killProcess(android.os.Process.myPid());
+                    }
+                })
+                .setNegativeButton(R.string.restart_message_Later, null)
+                .create()
+                .show();
+    }
+
+    public static LocalePair getLocalesUsedInProject(Context context) {
+        final String[] localesEntryValues = context.getAssets().getLocales();
+        final String[] localesEntry = new String[localesEntryValues.length];
+        for (int i=0; i<localesEntryValues.length; i++) {
+            localesEntry[i] = new Locale(localesEntryValues[i]).getDisplayLanguage(new Locale(localesEntryValues[i]));
+        }
+        return new LocalePair(localesEntry, localesEntryValues);
+    }
+
+    public static void deleteSubtitleDialog(Context context, final DialogInterface.OnClickListener positiveListener, final DialogInterface.OnClickListener negativeListener) {
+        new AlertDialog.Builder(context)
+                .setTitle(context.getResources().getString(R.string.delete_sub_title))
+                .setMessage(context.getResources().getString(R.string.delete_sub_message))
+                .setPositiveButton(R.string.delete_sub_yes, positiveListener)
+                .setNegativeButton(R.string.delete_sub_no, negativeListener)
+                .create()
+                .show();
+    }
+
 }

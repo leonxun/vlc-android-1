@@ -20,17 +20,19 @@
 
 package org.videolan.vlc.providers
 
-import android.arch.lifecycle.MutableLiveData
+import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
-import android.support.v4.util.SimpleArrayMap
-import kotlinx.coroutines.experimental.Job
-import kotlinx.coroutines.experimental.android.HandlerContext
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.withContext
+import androidx.collection.SimpleArrayMap
+import androidx.lifecycle.MutableLiveData
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.actor
+import kotlinx.coroutines.channels.mapNotNullTo
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.util.MediaBrowser
 import org.videolan.libvlc.util.MediaBrowser.EventListener
@@ -39,132 +41,162 @@ import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.medialibrary.media.MediaWrapper
 import org.videolan.medialibrary.media.Storage
 import org.videolan.vlc.R
-import org.videolan.vlc.VLCApplication
-import org.videolan.vlc.util.LiveDataset
-import org.videolan.vlc.util.VLCIO
-import org.videolan.vlc.util.VLCInstance
-import org.videolan.vlc.util.uiJob
+import org.videolan.vlc.util.*
 import java.util.*
 
 const val TAG = "VLC/BrowserProvider"
 
-abstract class BrowserProvider(val dataset: LiveDataset<MediaLibraryItem>, val url: String?, private val showHiddenFiles: Boolean) : EventListener {
+@ObsoleteCoroutinesApi
+@ExperimentalCoroutinesApi
+abstract class BrowserProvider(val context: Context, val dataset: LiveDataset<MediaLibraryItem>, val url: String?, private val showHiddenFiles: Boolean) : EventListener, CoroutineScope {
 
-    init {
-        fetch()
-    }
-    protected lateinit var mediabrowser: MediaBrowser
+    override val coroutineContext = Dispatchers.Main.immediate
+    val loading = MutableLiveData<Boolean>().apply { value = false }
+
+    protected val mutex= Mutex()
+    protected var mediabrowser: MediaBrowser? = null
 
     private val foldersContentMap = SimpleArrayMap<MediaLibraryItem, MutableList<MediaLibraryItem>>()
     private lateinit var browserChannel : Channel<Media>
-    private var job : Job? = null
+    protected var job : Job? = null
+    private val showAll = Settings.getInstance(context).getBoolean("browser_show_all_files", true)
 
     val descriptionUpdate = MutableLiveData<Pair<Int, String>>()
     internal val medialibrary = Medialibrary.getInstance()
 
+    private val browserActor = actor<BrowserAction>(Dispatchers.IO, Channel.UNLIMITED) {
+        for (action in channel) if (isActive) when (action) {
+            is Browse -> browseImpl(action.url)
+            is Refresh -> refreshImpl()
+            is ParseSubDirectories -> parseSubDirectoriesImpl()
+        } else channel.close()
+    }
+
+    init {
+        fetch()
+    }
+
     protected open fun initBrowser() {
-        if (!this::mediabrowser.isInitialized) mediabrowser = MediaBrowser(VLCInstance.get(), this, browserHandler)
+        if (mediabrowser == null) mediabrowser = MediaBrowser(VLCInstance.get(), this, browserHandler)
     }
 
     open fun fetch() {
-        val prefetchList by lazy(LazyThreadSafetyMode.NONE) { BrowserProvider.prefetchLists[url] }
+        val list by lazy(LazyThreadSafetyMode.NONE) { prefetchLists[url] }
         when {
-            url === null -> uiJob(true) {
+            url === null -> launch(Dispatchers.Main) {
                 browseRoot()
                 parseSubDirectories()
             }
-            prefetchList?.isEmpty() == false -> uiJob(true) {
-                dataset.value = prefetchList
-                BrowserProvider.prefetchLists.remove(url)
+            list?.isEmpty() == false -> launch(Dispatchers.Main) {
+                dataset.value = list ?: return@launch
+                prefetchLists.remove(url)
                 parseSubDirectories()
             }
             else -> browse(url)
         }
     }
 
-    protected fun browse(url: String? = null) {
+    protected open fun browse(url: String? = null) {
+        loading.value = true
+        if (!browserActor.isClosedForSend) browserActor.offer(Browse(url))
+    }
+
+    private fun browseImpl(url: String? = null) {
         browserChannel = Channel(Channel.UNLIMITED)
         requestBrowsing(url)
-        job = uiJob(false) {
-            for (media in browserChannel) addMedia(findMedia(media))
-            parseSubDirectories()
+        job = launch {
+            for (media in browserChannel) findMedia(media)?.let { addMedia(it) }
+            if (dataset.value.isNotEmpty()) parseSubDirectories()
+            else dataset.clear() // send observable event when folder is empty
+            loading.value = false
         }
     }
 
     protected open fun addMedia(media: MediaLibraryItem) = dataset.add(media)
 
-    open fun refresh(): Boolean {
-        if (url === null) return false
-        browserChannel = Channel(Channel.UNLIMITED)
-        val refreshList = mutableListOf<MediaLibraryItem>()
-        requestBrowsing(url)
-        job = uiJob(false) {
-            for (media in browserChannel) refreshList.add(findMedia(media))
-            dataset.value = refreshList
-            parseSubDirectories()
-        }
+    open fun refresh() : Boolean {
+        if (url === null || browserActor.isClosedForSend) return false
+        loading.value = true
+        browserActor.offer(Refresh)
         return true
     }
 
-    private suspend fun parseSubDirectories() {
-        if (dataset.value.isEmpty()) return
-        val currentMediaList = dataset.value.toList()
-        launch(browserContext, parent = job) {
-            val directories: MutableList<MediaWrapper> = ArrayList()
-            val files: MutableList<MediaWrapper> = ArrayList()
-            foldersContentMap.clear()
-            initBrowser()
-            var currentParsedPosition = -1
-            loop@ while (++currentParsedPosition < currentMediaList.size) {
-                if (!isActive) {
-                    browserChannel.close()
-                    return@launch
-                }
-                //skip media that are not browsable
-                val item = currentMediaList[currentParsedPosition]
-                val current = when {
-                    item.itemType == MediaLibraryItem.TYPE_MEDIA -> {
-                        val mw = item as MediaWrapper
-                        if (mw.type != MediaWrapper.TYPE_DIR && mw.type != MediaWrapper.TYPE_PLAYLIST) continue@loop
-                        mw
-                    }
-                    item.itemType == MediaLibraryItem.TYPE_STORAGE -> MediaWrapper((item as Storage).uri).apply { type = MediaWrapper.TYPE_DIR }
-                    else -> continue@loop
-                }
-                // request parsing
-                browserChannel = Channel(Channel.UNLIMITED)
-                mediabrowser.browse(current.uri, 0)
-                // retrieve subitems
-                for (media in browserChannel) {
-                    val type = media.type
-                    val mw = findMedia(media)
-                    if (type == Media.Type.Directory) directories.add(mw)
-                    else if (type == Media.Type.File) files.add(mw)
-                }
-                // all subitems are in
-                val holderText = getDescription(directories.size, files.size)
-                if (holderText != "") {
-                    val position = currentParsedPosition
-                    uiJob(true) {
-                        item.description = holderText
-                        descriptionUpdate.value = Pair(position, holderText)
-                    }
-                    directories.addAll(files)
-                    foldersContentMap.put(item, directories.toMutableList())
-                }
-                directories.clear()
-                files.clear()
-            }
+    internal open fun parseSubDirectories() {
+        if (!browserActor.isClosedForSend) browserActor.offer(ParseSubDirectories)
+    }
+
+    open fun refreshImpl() {
+        browserChannel = Channel(Channel.UNLIMITED)
+        requestBrowsing(url)
+        job = launch {
+            dataset.value = browserChannel.mapNotNullTo(mutableListOf()) { findMedia(it) }
+            parseSubDirectories()
+            loading.value = false
         }
     }
 
-    override fun onMediaAdded(index: Int, media: Media) { browserChannel.offer(media) }
-    override fun onBrowseEnd() { browserChannel.close() }
+    private suspend fun parseSubDirectoriesImpl() {
+        if (dataset.value.isEmpty()) return
+        val currentMediaList = withContext(Dispatchers.Main) { dataset.value.toList() }
+        val directories: MutableList<MediaWrapper> = ArrayList()
+        val files: MutableList<MediaWrapper> = ArrayList()
+        foldersContentMap.clear()
+        mutex.withLock { initBrowser() }
+        var currentParsedPosition = -1
+        loop@ while (++currentParsedPosition < currentMediaList.size) {
+            if (!isActive) {
+                browserChannel.close()
+                return
+            }
+            //skip media that are not browsable
+            val item = currentMediaList[currentParsedPosition]
+            val current = when {
+                item.itemType == MediaLibraryItem.TYPE_MEDIA -> {
+                    val mw = item as MediaWrapper
+                    if (mw.type != MediaWrapper.TYPE_DIR && mw.type != MediaWrapper.TYPE_PLAYLIST) continue@loop
+                    if (mw.uri.scheme == "otg" || mw.uri.scheme == "content") continue@loop
+                    mw
+                }
+                item.itemType == MediaLibraryItem.TYPE_STORAGE -> MediaWrapper((item as Storage).uri).apply { type = MediaWrapper.TYPE_DIR }
+                else -> continue@loop
+            }
+            // request parsing
+            browserChannel = Channel(Channel.UNLIMITED)
+            mutex.withLock { mediabrowser?.browse(current.uri, 0) }
+            // retrieve subitems
+            for (media in browserChannel) {
+                val mw = findMedia(media) ?: continue
+                val type = mw.type
+                if (type == MediaWrapper.TYPE_DIR) directories.add(mw)
+                else files.add(mw)
+            }
+            // all subitems are in
+            getDescription(directories.size, files.size).takeIf { it.isNotEmpty() }?.let {
+                val position = currentParsedPosition
+                launch {
+                    item.description = it
+                    descriptionUpdate.value = Pair(position, it)
+                }
+                directories.addAll(files)
+                foldersContentMap.put(item, directories.toMutableList())
+            }
+            directories.clear()
+            files.clear()
+        }
+    }
+
+    override fun onMediaAdded(index: Int, media: Media) {
+        if (!browserChannel.isClosedForSend) {
+            media.retain()
+            browserChannel.offer(media)
+        }
+    }
+    override fun onBrowseEnd() { if (!browserChannel.isClosedForSend) browserChannel.close() }
     override fun onMediaRemoved(index: Int, media: Media){}
 
     private val sb = StringBuilder()
     private fun getDescription(folderCount: Int, mediaFileCount: Int): String {
-        val res = VLCApplication.getAppResources()
+        val res = context.resources
         sb.setLength(0)
         if (folderCount > 0) {
             sb.append(res.getQuantityString(R.plurals.subfolders_quantity, folderCount, folderCount))
@@ -175,15 +207,20 @@ abstract class BrowserProvider(val dataset: LiveDataset<MediaLibraryItem>, val u
         return sb.toString()
     }
 
-    private suspend fun findMedia(media: Media): MediaWrapper {
+    private suspend fun findMedia(media: Media): MediaWrapper? {
         val mw = MediaWrapper(media)
+        media.release()
+        if (!mw.isMedia()) {
+            if (mw.isBrowserMedia()) return mw
+            else if (!showAll) return null
+        }
         val uri = mw.uri
         if ((mw.type == MediaWrapper.TYPE_AUDIO || mw.type == MediaWrapper.TYPE_VIDEO)
-                && "file" == uri.scheme) return withContext(VLCIO) { medialibrary.getMedia(uri) ?: mw }
+                && "file" == uri.scheme) return withContext(Dispatchers.IO) { medialibrary.getMedia(uri) ?: mw }
         return mw
     }
 
-    abstract fun browseRoot()
+    abstract suspend fun browseRoot()
 
     open fun getFlags() : Int {
         var flags = MediaBrowser.Flag.Interact or MediaBrowser.Flag.NoSlavesAutodetect
@@ -191,15 +228,35 @@ abstract class BrowserProvider(val dataset: LiveDataset<MediaLibraryItem>, val u
         return flags
     }
 
-    private fun requestBrowsing(url: String?) = launch(browserContext) {
-        initBrowser()
-        if (url != null) mediabrowser.browse(Uri.parse(url), getFlags())
-        else mediabrowser.discoverNetworkShares()
+    private fun requestBrowsing(url: String?) = launch(Dispatchers.IO) {
+        mutex.withLock {
+            initBrowser()
+            mediabrowser?.let {
+                if (url != null) it.browse(Uri.parse(url), getFlags())
+                else {
+                    it.changeEventListener(this@BrowserProvider)
+                    it.discoverNetworkShares()
+                }
+            }
+        }
     }
 
-    fun stop() = job?.cancel()
+    open fun stop() = job?.cancel()
 
-    fun release() = launch(BrowserProvider.browserContext) { mediabrowser.release() }
+    open fun release() {
+        browserActor.close()
+        launch(Dispatchers.IO) {
+            if (this@BrowserProvider::browserChannel.isInitialized) browserChannel.close()
+            job?.cancelAndJoin()
+            mutex.withLock {
+                mediabrowser?.let {
+                    it.release()
+                    mediabrowser = null
+                }
+            }
+        }
+        loading.value = false
+    }
 
     fun saveList(media: MediaWrapper) = foldersContentMap[media]?.let { if (!it.isEmpty()) prefetchLists[media.location] = it }
 
@@ -212,6 +269,10 @@ abstract class BrowserProvider(val dataset: LiveDataset<MediaLibraryItem>, val u
             Handler(handlerThread.looper)
         }
         private val prefetchLists = mutableMapOf<String, MutableList<MediaLibraryItem>>()
-        private val browserContext by lazy { HandlerContext(browserHandler, "provider-context") }
     }
 }
+
+private sealed class BrowserAction
+private class Browse(val url: String?) : BrowserAction()
+private object Refresh : BrowserAction()
+private object ParseSubDirectories : BrowserAction()

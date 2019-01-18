@@ -1,16 +1,16 @@
 package org.videolan.vlc.gui
 
-import android.support.annotation.MainThread
-import android.support.annotation.WorkerThread
-import android.support.v7.util.DiffUtil
-import android.support.v7.widget.RecyclerView
-import kotlinx.coroutines.experimental.android.UI
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.launch
-import java.util.*
+import androidx.annotation.MainThread
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.actor
 
-abstract class DiffUtilAdapter<D, VH : RecyclerView.ViewHolder> : RecyclerView.Adapter<VH>() {
+@ObsoleteCoroutinesApi
+@ExperimentalCoroutinesApi
+abstract class DiffUtilAdapter<D, VH : RecyclerView.ViewHolder> : RecyclerView.Adapter<VH>(), CoroutineScope {
+    override val coroutineContext = Dispatchers.Main.immediate
 
     protected var dataset: List<D> = listOf()
     private set
@@ -18,30 +18,33 @@ abstract class DiffUtilAdapter<D, VH : RecyclerView.ViewHolder> : RecyclerView.A
     private val updateActor = actor<List<D>>(capacity = Channel.CONFLATED) {
         for (list in channel) internalUpdate(list)
     }
-    protected abstract fun onUpdateFinished()
+    protected open fun onUpdateFinished() {}
 
     @MainThread
     fun update (list: List<D>) {
         updateActor.offer(list)
     }
 
-    @WorkerThread
+    @MainThread
     private suspend fun internalUpdate(list: List<D>) {
-        val finalList = prepareList(list)
-        val result = DiffUtil.calculateDiff(diffCallback.apply { update(dataset, finalList) }, detectMoves())
-        launch(UI) {
-            dataset = finalList
-            result.dispatchUpdatesTo(this@DiffUtilAdapter)
-            onUpdateFinished()
-        }.join()
+        val (finalList, result) = withContext(Dispatchers.Default) {
+            val finalList = prepareList(list)
+            val result = DiffUtil.calculateDiff(diffCallback.apply { update(dataset, finalList) }, detectMoves())
+            Pair(finalList, result)
+        }
+        dataset = finalList
+        result.dispatchUpdatesTo(this@DiffUtilAdapter)
+        onUpdateFinished()
     }
 
-    protected open fun prepareList(list: List<D>) : List<D> = ArrayList(list)
+    protected open fun prepareList(list: List<D>) : List<D> = list.toList()
 
     @MainThread
     fun isEmpty() = dataset.isEmpty()
 
     open fun getItem(position: Int) = dataset[position]
+
+    override fun getItemCount() = dataset.size
 
     protected open fun detectMoves() = false
 

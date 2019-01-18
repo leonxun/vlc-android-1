@@ -20,14 +20,9 @@
 
 package org.videolan.vlc.gui.video;
 
+import android.annotation.TargetApi;
 import android.content.Context;
-import android.content.SharedPreferences;
-import android.databinding.BindingAdapter;
-import android.databinding.DataBindingUtil;
-import android.databinding.ViewDataBinding;
-import android.support.annotation.MainThread;
-import android.support.annotation.Nullable;
-import android.support.v7.widget.GridLayoutManager;
+import android.os.Build;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -36,46 +31,55 @@ import android.widget.ImageView;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.Tools;
-import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
+import org.videolan.tools.MultiSelectAdapter;
+import org.videolan.tools.MultiSelectHelper;
 import org.videolan.vlc.BR;
 import org.videolan.vlc.R;
-import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.gui.DiffUtilAdapter;
 import org.videolan.vlc.gui.helpers.ImageLoaderKt;
 import org.videolan.vlc.gui.helpers.SelectorViewHolder;
 import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.interfaces.IEventsHandler;
-import org.videolan.vlc.media.MediaGroup;
 import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.MediaItemDiffCallback;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 
-public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAdapter.ViewHolder> {
+import androidx.annotation.MainThread;
+import androidx.annotation.Nullable;
+import androidx.databinding.BindingAdapter;
+import androidx.databinding.DataBindingUtil;
+import androidx.databinding.ObservableBoolean;
+import androidx.databinding.ViewDataBinding;
+import androidx.recyclerview.widget.GridLayoutManager;
+
+public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAdapter.ViewHolder> implements MultiSelectAdapter<MediaWrapper> {
 
     public final static String TAG = "VLC/VideoListAdapter";
 
     private boolean mListMode = false;
     private IEventsHandler mEventsHandler;
-    private int mSelectionCount = 0;
     private int mGridCardWidth = 0;
 
     private boolean mIsSeenMediaMarkerVisible;
+    private ObservableBoolean mShowFilename = new ObservableBoolean();
 
-    VideoListAdapter(IEventsHandler eventsHandler) {
+    private MultiSelectHelper<MediaWrapper> multiSelectHelper;
+
+    VideoListAdapter(IEventsHandler eventsHandler, boolean seenMarkVisible) {
         super();
+        multiSelectHelper = new MultiSelectHelper<>(this, Constants.UPDATE_SELECTION);
         mEventsHandler = eventsHandler;
-        final SharedPreferences settings = VLCApplication.getSettings();
-        mIsSeenMediaMarkerVisible = settings == null || settings.getBoolean("media_seen", true);
+        mIsSeenMediaMarkerVisible = seenMarkVisible;
     }
 
     @Override
     public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         final LayoutInflater inflater = (LayoutInflater) parent.getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         final ViewDataBinding binding = DataBindingUtil.inflate(inflater, mListMode ? R.layout.video_list_card : R.layout.video_grid_card, parent, false);
+        binding.setVariable(BR.showFilename, mShowFilename);
         if (!mListMode) {
             final GridLayoutManager.LayoutParams params = (GridLayoutManager.LayoutParams) binding.getRoot().getLayoutParams();
             params.width = mGridCardWidth;
@@ -93,7 +97,7 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
         holder.binding.setVariable(BR.scaleType, ImageView.ScaleType.CENTER_CROP);
         fillView(holder, media);
         holder.binding.setVariable(BR.media, media);
-        holder.selectView(media.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
+        holder.selectView(multiSelectHelper.isSelected(position));
     }
 
     @Override
@@ -104,14 +108,14 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
             for (Object data : payloads) {
                 switch ((int) data) {
                     case Constants.UPDATE_THUMB:
-                        ImageLoaderKt.loadImage(holder.thumbView, media);
+                        ImageLoaderKt.loadImage(holder.overlay, media);
                         break;
                     case Constants.UPDATE_TIME:
                     case Constants.UPDATE_SEEN:
                         fillView(holder, media);
                         break;
                     case Constants.UPDATE_SELECTION:
-                        holder.selectView(media.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
+                        holder.selectView(multiSelectHelper.isSelected(position));
                         break;
                 }
             }
@@ -123,6 +127,7 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
         holder.binding.setVariable(BR.cover, UiTools.Resources.DEFAULT_COVER_VIDEO_DRAWABLE);
     }
 
+    @Override
     @Nullable
     public MediaWrapper getItem(int position) {
         return isPositionValid(position) ? getDataset().get(position) : null;
@@ -140,34 +145,8 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
         return getDataset();
     }
 
-    List<MediaWrapper> getSelection() {
-        final List<MediaWrapper> selection = new LinkedList<>();
-        for (int i = 0; i < getDataset().size(); ++i) {
-            MediaWrapper mw = getDataset().get(i);
-            if (mw.hasStateFlags(MediaLibraryItem.FLAG_SELECTED)) {
-                if (mw instanceof MediaGroup)
-                    selection.addAll(((MediaGroup) mw).getAll());
-                else
-                    selection.add(mw);
-            }
-
-        }
-        return selection;
-    }
-
-    @MainThread
-    int getSelectionCount() {
-        return mSelectionCount;
-    }
-
-    @MainThread
-    void resetSelectionCount() {
-        mSelectionCount = 0;
-    }
-
-    @MainThread
-    void updateSelectionCount(boolean selected) {
-        mSelectionCount += selected ? 1 : -1;
+    public MultiSelectHelper<MediaWrapper> getMultiSelectHelper() {
+        return multiSelectHelper;
     }
 
     @MainThread
@@ -176,8 +155,8 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
     }
 
     private void fillView(ViewHolder holder, MediaWrapper media) {
-        String text = "";
-        String resolution = "";
+        String text;
+        String resolution;
         int max = 0;
         int progress = 0;
         long seen = 0L;
@@ -188,7 +167,7 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
             /* Time / Duration */
             resolution = Tools.getResolution(media);
             if (media.getLength() > 0) {
-                final long lastTime = media.getTime();
+                final long lastTime = media.getDisplayTime();
                 if (lastTime > 0) {
                     max = (int) (media.getLength() / 1000);
                     progress = (int) (lastTime / 1000);
@@ -232,28 +211,13 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
         return super.getItemViewType(position);
     }
 
-    int getListWithPosition(List<MediaWrapper>  list, int position) {
-        MediaWrapper mw;
-        int offset = 0;
-        for (int i = 0; i < getItemCount(); ++i) {
-            mw = getDataset().get(i);
-            if (mw instanceof MediaGroup) {
-                for (MediaWrapper item : ((MediaGroup) mw).getAll())
-                    list.add(item);
-                if (i < position)
-                    offset += ((MediaGroup)mw).size()-1;
-            } else
-                list.add(mw);
-        }
-        return position+offset;
-    }
-
     public class ViewHolder extends SelectorViewHolder<ViewDataBinding> implements View.OnFocusChangeListener {
-        private ImageView thumbView;
+        private ImageView overlay;
 
+        @TargetApi(Build.VERSION_CODES.M)
         public ViewHolder(ViewDataBinding binding) {
             super(binding);
-            thumbView = itemView.findViewById(R.id.ml_item_thumbnail);
+            overlay = itemView.findViewById(R.id.ml_item_overlay);
             binding.setVariable(BR.holder, this);
             binding.setVariable(BR.cover, UiTools.Resources.DEFAULT_COVER_VIDEO_DRAWABLE);
             if (AndroidUtil.isMarshMallowOrLater) itemView.setOnContextClickListener(new View.OnContextClickListener() {
@@ -284,13 +248,14 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
 
         @Override
         public void selectView(boolean selected) {
-            thumbView.setImageResource(selected ? R.drawable.ic_action_mode_select_1610 : mListMode ? 0 : R.drawable.black_gradient);
+            overlay.setImageResource(selected ? R.drawable.ic_action_mode_select_1610 : mListMode ? 0 : R.drawable.black_gradient);
+            if (mListMode) overlay.setVisibility(selected ? View.VISIBLE : View.GONE);
             super.selectView(selected);
         }
 
         @Override
         protected boolean isSelected() {
-            return getDataset().get(getLayoutPosition()).hasStateFlags(MediaLibraryItem.FLAG_SELECTED);
+            return multiSelectHelper.isSelected(getLayoutPosition());
         }
     }
 
@@ -326,7 +291,7 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
         public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
             final MediaWrapper oldItem = oldList.get(oldItemPosition);
             final MediaWrapper newItem = newList.get(newItemPosition);
-            return oldItem == newItem || (oldItem.getTime() == newItem.getTime()
+            return oldItem == newItem || (oldItem.getDisplayTime() == newItem.getDisplayTime()
                     && TextUtils.equals(oldItem.getArtworkMrl(), newItem.getArtworkMrl())
                     && oldItem.getSeen() == newItem.getSeen());
         }
@@ -336,7 +301,7 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
         public Object getChangePayload(int oldItemPosition, int newItemPosition) {
             final MediaWrapper oldItem = oldList.get(oldItemPosition);
             final MediaWrapper newItem = newList.get(newItemPosition);
-            if (oldItem.getTime() != newItem.getTime())
+            if (oldItem.getDisplayTime() != newItem.getDisplayTime())
                 return Constants.UPDATE_TIME;
             if (!TextUtils.equals(oldItem.getArtworkMrl(), newItem.getArtworkMrl()))
                 return Constants.UPDATE_THUMB;
@@ -347,6 +312,10 @@ public class VideoListAdapter extends DiffUtilAdapter<MediaWrapper, VideoListAda
 
     void setSeenMediaMarkerVisible(boolean seenMediaMarkerVisible) {
         mIsSeenMediaMarkerVisible = seenMediaMarkerVisible;
+    }
+
+    void showFilename(boolean show) {
+        mShowFilename.set(show);
     }
 
     @Override

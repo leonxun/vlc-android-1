@@ -3,6 +3,7 @@
 
     <color name="black">#000001</color>
     <color name="white">#ffffff</color>
+    <color name="red">#bb0000</color>
 
 <!--
     Material color swatches
@@ -38,6 +39,7 @@
 
     <color name="grey50transparent">#dcfafafa</color>
     <color name="grey400transparent">#80bdbdbd</color>
+    <color name="grey600transparent">#80757575</color>
     <color name="grey900transparent">#80212121</color>
 
     <color name="blacktransparent">#b4000000</color>

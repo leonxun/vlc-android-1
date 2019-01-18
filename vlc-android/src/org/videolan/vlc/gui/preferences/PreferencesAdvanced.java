@@ -23,21 +23,14 @@
 
 package org.videolan.vlc.gui.preferences;
 
-import android.Manifest;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
-import android.support.v7.app.AlertDialog;
-import android.support.v7.preference.EditTextPreference;
-import android.support.v7.preference.Preference;
-import android.text.TextUtils;
 import android.widget.Toast;
 
-import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.Medialibrary;
 import org.videolan.vlc.BuildConfig;
 import org.videolan.vlc.R;
@@ -51,6 +44,10 @@ import org.videolan.vlc.util.VLCInstance;
 import org.videolan.vlc.util.WorkersKt;
 
 import java.io.File;
+
+import androidx.appcompat.app.AlertDialog;
+import androidx.preference.EditTextPreference;
+import androidx.preference.Preference;
 
 public class PreferencesAdvanced extends BasePreferenceFragment implements SharedPreferences.OnSharedPreferenceChangeListener {
     @Override
@@ -67,13 +64,7 @@ public class PreferencesAdvanced extends BasePreferenceFragment implements Share
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        if (TextUtils.equals(BuildConfig.FLAVOR_target, "chrome")) {
-            findPreference("quit_app").setEnabled(false);
-        }
-
-        findPreference("debug_logs").setVisible(AndroidUtil.isJellyBeanOrLater ||
-                (BuildConfig.DEBUG && getActivity().checkCallingOrSelfPermission(Manifest.permission.READ_LOGS) == PackageManager.PERMISSION_GRANTED));
+        if (BuildConfig.DEBUG) findPreference("debug_logs").setVisible(false);
     }
 
     @Override
@@ -94,11 +85,11 @@ public class PreferencesAdvanced extends BasePreferenceFragment implements Share
             return false;
         switch (preference.getKey()){
             case "debug_logs":
-                Intent intent = new Intent(VLCApplication.getAppContext(), DebugLogActivity.class);
+                final Intent intent = new Intent(requireContext(), DebugLogActivity.class);
                 startActivity(intent);
                 return true;
             case "clear_history":
-                new AlertDialog.Builder(getActivity())
+                new AlertDialog.Builder(requireContext())
                         .setTitle(R.string.clear_playback_history)
                         .setMessage(R.string.validation)
                         .setIcon(android.R.drawable.ic_dialog_alert)
@@ -115,7 +106,7 @@ public class PreferencesAdvanced extends BasePreferenceFragment implements Share
             case "clear_media_db":
                 final Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                 i.addCategory(Intent.CATEGORY_DEFAULT);
-                i.setData(Uri.parse("package:" + VLCApplication.getAppContext().getPackageName()));
+                i.setData(Uri.parse("package:" + requireContext().getPackageName()));
                 startActivity(i);
                 return true;
             case "quit_app":
@@ -124,26 +115,27 @@ public class PreferencesAdvanced extends BasePreferenceFragment implements Share
             case "dump_media_db":
                 if (VLCApplication.getMLInstance().isWorking())
                     UiTools.snacker(getView(), getString(R.string.settings_ml_block_scan));
-                else {
-                    WorkersKt.runBackground(new Runnable() {
+                else WorkersKt.runIO(new Runnable() {
                         @Override
                         public void run() {
                             final Runnable dump = new Runnable() {
                                 @Override
                                 public void run() {
-                                    final File db = new File(VLCApplication.getAppContext().getDir("db", Context.MODE_PRIVATE)+ Medialibrary.VLC_MEDIA_DB_NAME);
+                                    final File db = new File(requireContext().getDir("db", Context.MODE_PRIVATE)+ Medialibrary.VLC_MEDIA_DB_NAME);
 
                                     if (FileUtils.copyFile(db, new File(AndroidDevices.EXTERNAL_PUBLIC_DIRECTORY + Medialibrary.VLC_MEDIA_DB_NAME)))
                                         WorkersKt.runOnMainThread(new Runnable() {
                                             @Override
                                             public void run() {
-                                                Toast.makeText(VLCApplication.getAppContext(), "Database dumped on internal storage root", Toast.LENGTH_LONG).show();
+                                                final Context ctx = getContext();
+                                                if (ctx != null) Toast.makeText(ctx, "Database dumped on internal storage root", Toast.LENGTH_LONG).show();
                                             }
                                         });
                                     else WorkersKt.runOnMainThread(new Runnable() {
                                         @Override
                                         public void run() {
-                                            Toast.makeText(VLCApplication.getAppContext(), "Failed to dumped database", Toast.LENGTH_LONG).show();
+                                                final Context ctx = getContext();
+                                                if (ctx != null) Toast.makeText(ctx, "Failed to dumped database", Toast.LENGTH_LONG).show();
                                         }
                                     });
                                 }
@@ -152,7 +144,6 @@ public class PreferencesAdvanced extends BasePreferenceFragment implements Share
                             else Permissions.askWriteStoragePermission(getActivity(), false, dump);
                         }
                     });
-                }
                 return true;
         }
         return super.onPreferenceTreeClick(preference);

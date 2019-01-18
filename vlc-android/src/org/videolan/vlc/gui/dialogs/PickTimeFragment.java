@@ -23,8 +23,8 @@
 package org.videolan.vlc.gui.dialogs;
 
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v4.app.DialogFragment;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.DialogFragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -37,7 +37,7 @@ import org.videolan.vlc.gui.PlaybackServiceActivity;
 import org.videolan.vlc.gui.PlaybackServiceFragment;
 import org.videolan.vlc.gui.helpers.UiTools;
 
-public abstract class PickTimeFragment extends DialogFragment implements View.OnClickListener, View.OnFocusChangeListener,
+public abstract class PickTimeFragment extends DismissDialogFragment implements View.OnClickListener, View.OnFocusChangeListener,
         PlaybackService.Client.Callback {
 
     public final static String TAG = "VLC/PickTimeFragment";

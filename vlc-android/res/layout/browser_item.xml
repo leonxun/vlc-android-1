@@ -14,6 +14,9 @@
             name="item"
             type="MediaLibraryItem"/>
         <variable
+            name="filename"
+            type="String"/>
+        <variable
             name="hasContextMenu"
             type="boolean"/>
         <variable
@@ -29,7 +32,7 @@
             name="bgColor"
             type="int" />
     </data>
-    <android.support.constraint.ConstraintLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="48dp"
@@ -54,21 +57,31 @@
             android:visibility="@{item.getItemType() == MediaLibraryItem.TYPE_STORAGE ? View.VISIBLE : View.GONE, default=gone}" />
 
         <!-- Image downloading is handled by org.videolan.vlc.gui.helpers.ImageLoader.loadImage() -->
-        <TextView
-            android:id="@+id/dvi_icon"
+        <ImageView
+            android:id="@+id/item_icon"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:background="@{cover}"
+            android:src="@{cover}"
+            android:scaleType="centerCrop"
             android:contentDescription="@string/cover_art"
-            android:gravity="center"
-            android:text="@{protocol}"
-            android:textColor="@color/whitetransparent"
-            android:textSize="11sp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toEndOf="@+id/browser_checkbox"
             app:layout_constraintTop_toTopOf="parent"
             app:media="@{item}"
             android:visibility="@{item.getItemType() == MediaLibraryItem.TYPE_STORAGE ? View.GONE : View.VISIBLE}" />
+        <TextView
+            android:id="@+id/dvi_icon"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:gravity="center"
+            android:text="@{protocol}"
+            android:textColor="@color/whitetransparent"
+            android:textSize="11sp"
+            app:layout_constraintBottom_toBottomOf="@+id/item_icon"
+            app:layout_constraintStart_toStartOf="@+id/item_icon"
+            app:layout_constraintEnd_toEndOf="@+id/item_icon"
+            app:layout_constraintTop_toTopOf="@+id/item_icon"
+            android:visibility="@{ TextUtils.isEmpty(protocol) ? View.GONE : View.VISIBLE, default=gone}" />
 
         <TextView
             android:id="@+id/title"
@@ -78,14 +91,14 @@
             android:layout_marginLeft="@dimen/default_margin"
             android:layout_marginStart="@dimen/default_margin"
             app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintStart_toEndOf="@+id/dvi_icon"
+            app:layout_constraintStart_toEndOf="@+id/item_icon"
             app:layout_constraintVertical_chainStyle="packed"
             app:layout_constraintEnd_toStartOf="@+id/item_more"
             app:layout_constraintBottom_toTopOf="@+id/text"
             android:ellipsize="end"
             android:singleLine="true"
             android:maxLines="1"
-            android:text="@{item.title}"
+            android:text="@{filename ?? item.title}"
             android:textColor="?attr/list_title"
             android:textSize="16sp"
             android:lineSpacingMultiplier="1.1" />
@@ -117,5 +130,5 @@
             android:visibility="@{hasContextMenu ? View.VISIBLE : View.GONE, default=gone}"
             android:onClick="@{holder::onMoreClick}"
             android:clickable="@{hasContextMenu}" />
-    </android.support.constraint.ConstraintLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>

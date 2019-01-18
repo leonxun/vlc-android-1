@@ -23,41 +23,51 @@
 
 package org.videolan.vlc.gui.tv
 
-import android.arch.lifecycle.Observer
-import android.arch.lifecycle.ViewModelProviders
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
-import android.preference.PreferenceManager
-import android.support.v17.leanback.app.BackgroundManager
-import android.support.v17.leanback.app.BrowseSupportFragment
-import android.support.v17.leanback.widget.*
-import android.support.v4.content.ContextCompat
 import android.view.View
+import androidx.core.content.ContextCompat
+import androidx.leanback.app.BackgroundManager
+import androidx.leanback.app.BrowseSupportFragment
+import androidx.leanback.widget.*
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.Observer
+import androidx.lifecycle.ViewModelProviders
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.actor
+import kotlinx.coroutines.delay
 import org.videolan.libvlc.util.AndroidUtil
 import org.videolan.medialibrary.Medialibrary
 import org.videolan.medialibrary.media.DummyItem
 import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.medialibrary.media.MediaWrapper
+import org.videolan.tools.coroutineScope
 import org.videolan.vlc.BuildConfig
 import org.videolan.vlc.ExternalMonitor
 import org.videolan.vlc.R
 import org.videolan.vlc.RecommendationsService
+import org.videolan.vlc.database.models.BrowserFav
 import org.videolan.vlc.gui.preferences.PreferencesFragment
 import org.videolan.vlc.gui.tv.MainTvActivity.ACTIVITY_RESULT_PREFERENCES
 import org.videolan.vlc.gui.tv.MainTvActivity.BROWSER_TYPE
 import org.videolan.vlc.gui.tv.TvUtil.diffCallback
 import org.videolan.vlc.gui.tv.audioplayer.AudioPlayerActivity
 import org.videolan.vlc.gui.tv.browser.VerticalGridActivity
-import org.videolan.vlc.media.MediaDatabase
-import org.videolan.vlc.util.AndroidDevices
-import org.videolan.vlc.util.Constants
+import org.videolan.vlc.repository.BrowserFavRepository
+import org.videolan.vlc.repository.DirectoryRepository
+import org.videolan.vlc.repository.createDirectory
+import org.videolan.vlc.util.*
 import org.videolan.vlc.viewmodels.HistoryModel
 import org.videolan.vlc.viewmodels.VideosModel
 
 private const val NUM_ITEMS_PREVIEW = 5
 private const val TAG = "VLC/MainTvFragment"
 
+@ObsoleteCoroutinesApi
+@ExperimentalCoroutinesApi
 class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnItemViewClickedListener, View.OnClickListener, Observer<MutableList<MediaWrapper>> {
 
     private var backgroundManager: BackgroundManager? = null
@@ -83,9 +93,14 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
     private var selectedItem: Any? = null
     private var restart = false
 
+    private lateinit var browserFavRepository: BrowserFavRepository
+
+    private var updatedFavoritList: List<MediaWrapper> = listOf()
+    private lateinit var favorites: LiveData<List<BrowserFav>>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        settings = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        settings = Settings.getInstance(requireContext())
         // Set display parameters for the BrowseFragment
         headersState = BrowseSupportFragment.HEADERS_ENABLED
         title = getString(R.string.app_name)
@@ -100,6 +115,13 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
         brandColor = ContextCompat.getColor(requireContext(), R.color.orange800)
         backgroundManager = BackgroundManager.getInstance(requireActivity()).apply { attach(requireActivity().window) }
         nowPlayingDelegate = NowPlayingDelegate(this)
+
+        browserFavRepository = BrowserFavRepository.getInstance(requireContext())
+        favorites = browserFavRepository.browserFavorites
+        favorites.observe(this, Observer{
+            updatedFavoritList = convertFavorites(it)
+            updateActor.offer(Browsers)
+        })
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -113,7 +135,7 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
         rowsAdapter.add(videoRow)
         // Audio
         categoriesAdapter = ArrayObjectAdapter(CardPresenter(ctx))
-        val musicHeader = HeaderItem(Constants.HEADER_CATEGORIES, getString(R.string.audio))
+        val musicHeader = HeaderItem(HEADER_CATEGORIES, getString(R.string.audio))
         updateAudioCategories()
         audioRow = ListRow(musicHeader, categoriesAdapter)
         rowsAdapter.add(audioRow)
@@ -121,37 +143,45 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
 
         //Browser section
         browserAdapter = ArrayObjectAdapter(CardPresenter(ctx))
-        val browserHeader = HeaderItem(Constants.HEADER_NETWORK, getString(R.string.browsing))
-        updateBrowsers()
+        val browserHeader = HeaderItem(HEADER_NETWORK, getString(R.string.browsing))
         browsersRow = ListRow(browserHeader, browserAdapter)
         rowsAdapter.add(browsersRow)
+        updateActor.offer(Browsers)
         //Misc. section
         otherAdapter = ArrayObjectAdapter(CardPresenter(ctx))
-        val miscHeader = HeaderItem(Constants.HEADER_MISC, getString(R.string.other))
+        val miscHeader = HeaderItem(HEADER_MISC, getString(R.string.other))
 
-        otherAdapter.add(DummyItem(Constants.ID_SETTINGS, getString(R.string.preferences), ""))
-        otherAdapter.add(DummyItem(Constants.ID_ABOUT_TV, getString(R.string.about), "${getString(R.string.app_name_full)} ${BuildConfig.VERSION_NAME}"))
-        otherAdapter.add(DummyItem(Constants.ID_LICENCE, getString(R.string.licence), ""))
+        otherAdapter.add(DummyItem(ID_SETTINGS, getString(R.string.preferences), ""))
+        otherAdapter.add(DummyItem(ID_ABOUT_TV, getString(R.string.about), "${getString(R.string.app_name_full)} ${BuildConfig.VERSION_NAME}"))
+        otherAdapter.add(DummyItem(ID_LICENCE, getString(R.string.licence), ""))
         miscRow = ListRow(miscHeader, otherAdapter)
         rowsAdapter.add(miscRow)
 
         adapter = rowsAdapter
-        videoModel = VideosModel.get(this, null, 0, Medialibrary.SORT_INSERTIONDATE)
+        videoModel = VideosModel.get(requireContext(), this, Medialibrary.SORT_INSERTIONDATE, -1, desc = true, group = null)
         videoModel.dataset.observe(this, Observer {
             updateVideos(it)
             (requireActivity() as MainTvActivity).hideLoading()
         })
-        ExternalMonitor.connected.observe(this, Observer { updateBrowsers() })
+        ExternalMonitor.connected.observe(this, Observer { updateActor.offer(Browsers) })
+        ExternalMonitor.storageUnplugged.observe(this, Observer { updateActor.offer(Browsers) })
+        ExternalMonitor.storagePlugged.observe(this, Observer { updateActor.offer(Browsers) })
         onItemViewClickedListener = this
         onItemViewSelectedListener = this
     }
 
+    override fun onActivityCreated(savedInstanceState: Bundle?) {
+        super.onActivityCreated(savedInstanceState)
+        val browsePath = activity?.intent?.getStringExtra(EXTRA_PATH) ?: return
+        TvUtil.openMedia(requireActivity(), createDirectory(browsePath, requireContext()), null)
+    }
+
     fun updateAudioCategories(current: DummyItem? = null) {
         val list = mutableListOf<MediaLibraryItem>(
-                DummyItem(Constants.CATEGORY_ARTISTS, getString(R.string.artists), ""),
-                DummyItem(Constants.CATEGORY_ALBUMS, getString(R.string.albums), ""),
-                DummyItem(Constants.CATEGORY_GENRES, getString(R.string.genres), ""),
-                DummyItem(Constants.CATEGORY_SONGS, getString(R.string.tracks), "")
+                DummyItem(CATEGORY_ARTISTS, getString(R.string.artists), ""),
+                DummyItem(CATEGORY_ALBUMS, getString(R.string.albums), ""),
+                DummyItem(CATEGORY_GENRES, getString(R.string.genres), ""),
+                DummyItem(CATEGORY_SONGS, getString(R.string.tracks), "")
         )
         if (current !== null) list.add(0, current)
         categoriesAdapter.setItems(list.toList(), diffCallback)
@@ -160,7 +190,7 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
     override fun onStart() {
         super.onStart()
         if (restart) {
-            historyModel.refresh()
+            if (this::historyModel.isInitialized) historyModel.refresh()
             videoModel.refresh()
         } else restart = true
         if (selectedItem is MediaWrapper) TvUtil.updateBackground(backgroundManager, selectedItem)
@@ -190,25 +220,23 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
         return true
     }
 
-    fun updateBrowsers() {
+    suspend fun updateBrowsers() {
         val list = mutableListOf<MediaLibraryItem>()
-        val directories = AndroidDevices.getMediaDirectoriesList()
+        val directories = DirectoryRepository.getInstance(requireContext()).getMediaDirectoriesList(requireContext().applicationContext).toMutableList()
         if (!AndroidDevices.showInternalStorage && !directories.isEmpty()) directories.removeAt(0)
-        for (directory in directories) list.add(directory)
+        for (directory in directories) {
+            if (directory.location.scanAllowed()) list.add(directory)
+        }
 
-        if (ExternalMonitor.isLan()) {
-            try {
-                val favs = MediaDatabase.getInstance().allNetworkFav
-                list.add(DummyItem(Constants.HEADER_NETWORK, getString(R.string.network_browsing), null))
-                list.add(DummyItem(Constants.HEADER_STREAM, getString(R.string.open_mrl), null))
+        if (ExternalMonitor.isLan) {
+            list.add(DummyItem(HEADER_NETWORK, getString(R.string.network_browsing), null))
+            list.add(DummyItem(HEADER_STREAM, getString(R.string.open_mrl), null))
+            list.add(DummyItem(HEADER_SERVER, getString(R.string.server_add_title), null))
 
-                if (!favs.isEmpty()) {
-                    for (fav in favs) {
-                        fav.description = fav.uri.scheme
-                        list.add(fav)
-                    }
-                }
-            } catch (ignored: Exception) {} //SQLite can explode
+            updatedFavoritList.forEach{
+                it.description = it.uri.scheme
+                list.add(it)
+            }
         }
         browserAdapter.setItems(list, diffCallback)
     }
@@ -216,22 +244,22 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
     override fun onItemClicked(itemViewHolder: Presenter.ViewHolder?, item: Any?, rowViewHolder: RowPresenter.ViewHolder?, row: Row?) {
         val activity = requireActivity()
         when(row?.id) {
-            Constants.HEADER_CATEGORIES -> {
-                if ((item as DummyItem).id == Constants.CATEGORY_NOW_PLAYING) { //NOW PLAYING CARD
+            HEADER_CATEGORIES -> {
+                if ((item as DummyItem).id == CATEGORY_NOW_PLAYING) { //NOW PLAYING CARD
                     activity.startActivity(Intent(activity, AudioPlayerActivity::class.java))
                     return
                 }
                 val intent = Intent(activity, VerticalGridActivity::class.java)
-                intent.putExtra(BROWSER_TYPE, Constants.HEADER_CATEGORIES)
-                intent.putExtra(Constants.AUDIO_CATEGORY, item.id)
+                intent.putExtra(BROWSER_TYPE, HEADER_CATEGORIES)
+                intent.putExtra(AUDIO_CATEGORY, item.id)
                 activity.startActivity(intent)
             }
-            Constants.HEADER_MISC -> {
+            HEADER_MISC -> {
                 val id = (item as DummyItem).id
                 when (id) {
-                    Constants.ID_SETTINGS -> activity.startActivityForResult(Intent(activity, org.videolan.vlc.gui.tv.preferences.PreferencesActivity::class.java), ACTIVITY_RESULT_PREFERENCES)
-                    Constants.ID_ABOUT_TV -> activity.startActivity(Intent(activity, org.videolan.vlc.gui.tv.AboutActivity::class.java))
-                    Constants.ID_LICENCE -> startActivity(Intent(activity, org.videolan.vlc.gui.tv.LicenceActivity::class.java))
+                    ID_SETTINGS -> activity.startActivityForResult(Intent(activity, org.videolan.vlc.gui.tv.preferences.PreferencesActivity::class.java), ACTIVITY_RESULT_PREFERENCES)
+                    ID_ABOUT_TV -> activity.startActivity(Intent(activity, org.videolan.vlc.gui.tv.AboutActivity::class.java))
+                    ID_LICENCE -> startActivity(Intent(activity, org.videolan.vlc.gui.tv.LicenceActivity::class.java))
                 }
             }
             else -> TvUtil.openMedia(activity, item, row)
@@ -247,12 +275,16 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
         val historyEnabled = settings.getBoolean(PreferencesFragment.PLAYBACK_HISTORY, true)
         if (historyEnabled == displayHistory) return
         if (historyEnabled) {
-            historyModel = ViewModelProviders.of(this).get(HistoryModel::class.java)
+            historyModel = ViewModelProviders.of(this, HistoryModel.Factory(requireContext())).get(HistoryModel::class.java)
             historyModel.dataset.observe(this, this)
         } else {
             displayHistory = false
             historyModel.dataset.removeObserver(this)
         }
+    }
+
+    fun updateHistory() {
+        if (this::historyModel.isInitialized) historyModel.refresh()
     }
 
     override fun onChanged(list: MutableList<MediaWrapper>?) {
@@ -262,7 +294,7 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
                     displayHistory = true
                     if (!this::historyRow.isInitialized) {
                         historyAdapter = ArrayObjectAdapter(CardPresenter(requireActivity()))
-                        val historyHeader = HeaderItem(Constants.HEADER_HISTORY, getString(R.string.history))
+                        val historyHeader = HeaderItem(HEADER_HISTORY, getString(R.string.history))
                         historyRow = ListRow(historyHeader, historyAdapter)
                     }
                 }
@@ -280,7 +312,7 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
     private fun updateVideos(videos: List<MediaWrapper>?) {
         videos?.let {
             val list = mutableListOf<Any>()
-            list.add(DummyItem(Constants.HEADER_VIDEO, getString(R.string.videos_all), resources.getQuantityString(R.plurals.videos_quantity, it.size, it.size)))
+            list.add(DummyItem(HEADER_VIDEO, getString(R.string.videos_all), resources.getQuantityString(R.plurals.videos_quantity, it.size, it.size)))
             if (!it.isEmpty()) for ((index, video) in it.withIndex()) {
                 if (index == NUM_ITEMS_PREVIEW) break
                 list.add(video)
@@ -288,4 +320,16 @@ class MainTvFragment : BrowseSupportFragment(), OnItemViewSelectedListener, OnIt
             videoAdapter.setItems(list, diffCallback)
         }
     }
+
+    private val updateActor = coroutineScope.actor<Update>(capacity = Channel.CONFLATED) {
+        for (action in channel) when (action) {
+            Browsers -> {
+                updateBrowsers()
+                delay(500L)
+            }
+        }
+    }
 }
+
+private sealed class Update
+private object Browsers : Update()

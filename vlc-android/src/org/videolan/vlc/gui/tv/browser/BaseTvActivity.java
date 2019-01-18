@@ -24,34 +24,34 @@
 package org.videolan.vlc.gui.tv.browser;
 
 import android.annotation.TargetApi;
-import android.arch.lifecycle.Observer;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.preference.PreferenceManager;
-import android.support.annotation.Nullable;
 import android.view.KeyEvent;
 import android.widget.TextView;
 
 import org.videolan.medialibrary.Medialibrary;
 import org.videolan.vlc.ExternalMonitor;
 import org.videolan.vlc.MediaParsingService;
+import org.videolan.vlc.MediaParsingServiceKt;
 import org.videolan.vlc.R;
 import org.videolan.vlc.ScanProgress;
 import org.videolan.vlc.VLCApplication;
-import org.videolan.vlc.gui.PlaybackServiceActivity;
 import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.gui.tv.SearchActivity;
 import org.videolan.vlc.gui.tv.TimeUpdaterKt;
-import org.videolan.vlc.util.Constants;
-import org.videolan.vlc.util.Permissions;
+import org.videolan.vlc.util.Settings;
 
 import java.util.List;
 
+import androidx.annotation.Nullable;
+import androidx.fragment.app.FragmentActivity;
+import androidx.lifecycle.Observer;
+
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
-public abstract class BaseTvActivity extends PlaybackServiceActivity {
+public abstract class BaseTvActivity extends FragmentActivity {
 
     private static final String TAG = "VLC/BaseTvActivity";
 
@@ -62,11 +62,10 @@ public abstract class BaseTvActivity extends PlaybackServiceActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         //Init Medialibrary if KO
-        if (savedInstanceState != null && !VLCApplication.getMLInstance().isInitiated() && Permissions.canReadStorage(this))
-            startService(new Intent(Constants.ACTION_INIT, null, this, MediaParsingService.class));
+        if (savedInstanceState != null) MediaParsingServiceKt.startMedialibrary(this, false, false, true);
         super.onCreate(savedInstanceState);
         mMediaLibrary = VLCApplication.getMLInstance();
-        mSettings = PreferenceManager.getDefaultSharedPreferences(this);
+        mSettings = Settings.INSTANCE.getInstance(this);
         registerLiveData();
         new Handler().post(new Runnable() {
             @Override
@@ -78,7 +77,7 @@ public abstract class BaseTvActivity extends PlaybackServiceActivity {
 
     @Override
     protected void onStart() {
-        ExternalMonitor.subscribeStorageCb(this);
+        ExternalMonitor.INSTANCE.subscribeStorageCb(this);
 
         // super.onStart must be called after receiver registration
         super.onStart();
@@ -88,7 +87,7 @@ public abstract class BaseTvActivity extends PlaybackServiceActivity {
     @Override
     protected void onStop() {
         mIsVisible = false;
-        ExternalMonitor.unsubscribeStorageCb(this);
+        ExternalMonitor.INSTANCE.unsubscribeStorageCb(this);
         super.onStop();
     }
 
@@ -102,7 +101,6 @@ public abstract class BaseTvActivity extends PlaybackServiceActivity {
     }
 
     protected abstract void refresh();
-    public void onNetworkConnectionChanged(boolean connected) {}
 
     protected boolean isVisible() {
         return mIsVisible;
@@ -113,19 +111,13 @@ public abstract class BaseTvActivity extends PlaybackServiceActivity {
     protected void onParsingServiceFinished() {}
 
     private void registerLiveData() {
-        ExternalMonitor.connected.observe(this, new Observer<Boolean>() {
-            @Override
-            public void onChanged(@Nullable Boolean connected) {
-                onNetworkConnectionChanged(connected);
-            }
-        });
         MediaParsingService.Companion.getProgress().observe(this, new Observer<ScanProgress>() {
             @Override
             public void onChanged(@Nullable ScanProgress scanProgress) {
                 if (scanProgress != null) onParsingServiceProgress();
             }
         });
-        MediaParsingService.Companion.getStarted().observe(this, new Observer<Boolean>() {
+        Medialibrary.getState().observe(this, new Observer<Boolean>() {
             @Override
             public void onChanged(@Nullable Boolean started) {
                 if (started == null) return;

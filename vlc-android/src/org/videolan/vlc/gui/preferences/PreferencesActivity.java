@@ -23,25 +23,27 @@ package org.videolan.vlc.gui.preferences;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
-import android.support.design.widget.AppBarLayout;
-import android.support.v4.view.ViewCompat;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
 import android.view.MenuItem;
+
+import com.google.android.material.appbar.AppBarLayout;
 
 import org.videolan.vlc.PlaybackService;
 import org.videolan.vlc.R;
+import org.videolan.vlc.util.Settings;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.view.ViewCompat;
+import videolan.org.commontools.LiveEvent;
 
 @SuppressWarnings("deprecation")
-public class PreferencesActivity extends AppCompatActivity implements PlaybackService.Client.Callback {
+public class PreferencesActivity extends AppCompatActivity {
 
     public final static String TAG = "VLC/PreferencesActivity";
 
     public final static String NAME = "VlcSharedPreferences";
     public final static String VIDEO_RESUME_TIME = "VideoResumeTime";
     public final static String VIDEO_PAUSED = "VideoPaused";
-    public final static String VIDEO_SUBTITLE_FILES = "VideoSubtitleFiles";
     public final static String VIDEO_SPEED = "VideoSpeed";
     public final static String VIDEO_RESTORE = "video_restore";
     public final static String VIDEO_RATE = "video_rate";
@@ -57,8 +59,6 @@ public class PreferencesActivity extends AppCompatActivity implements PlaybackSe
     public final static int RESULT_UPDATE_SEEN_MEDIA = RESULT_FIRST_USER + 4;
     public final static int RESULT_UPDATE_ARTISTS = RESULT_FIRST_USER + 5;
 
-    private PlaybackService.Client mClient = new PlaybackService.Client(this, this);
-    private PlaybackService mService;
     private AppBarLayout mAppBarLayout;
 
     @Override
@@ -89,18 +89,6 @@ public class PreferencesActivity extends AppCompatActivity implements PlaybackSe
     }
 
     @Override
-    protected void onStart() {
-        super.onStart();
-        mClient.connect();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        mClient.disconnect();
-    }
-
-    @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
             if (!getSupportFragmentManager().popBackStackImmediate())
@@ -111,25 +99,16 @@ public class PreferencesActivity extends AppCompatActivity implements PlaybackSe
     }
 
     private void applyTheme() {
-        SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(this);
+        SharedPreferences pref = Settings.INSTANCE.getInstance(this);
         boolean enableBlackTheme = pref.getBoolean("enable_black_theme", false);
         if (enableBlackTheme) {
             setTheme(R.style.Theme_VLC_Black);
         }
     }
 
-    @Override
-    public void onConnected(PlaybackService service) {
-        mService = service;
-    }
-
-    @Override
-    public void onDisconnected() {
-        mService = null;
-    }
-
-    public void restartMediaPlayer(){
-        if (mService != null) mService.restartMediaPlayer();
+    public void restartMediaPlayer() {
+        final LiveEvent<Boolean> le = PlaybackService.Companion.getRestartPlayer();
+        if (le.hasObservers()) le.setValue(true);
     }
 
     public void exitAndRescan(){
@@ -151,8 +130,8 @@ public class PreferencesActivity extends AppCompatActivity implements PlaybackSe
         setResult(RESULT_UPDATE_ARTISTS);
     }
 
-    public void detectHeadset(boolean detect){
-        if (mService != null)
-            mService.detectHeadset(detect);
+    public void detectHeadset(boolean detect) {
+        final LiveEvent<Boolean> le = PlaybackService.Companion.getHeadSetDetection();
+        if (le.hasObservers()) le.setValue(detect);
     }
 }

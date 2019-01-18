@@ -23,12 +23,11 @@
 package org.videolan.vlc.gui.browser;
 
 import android.annotation.TargetApi;
-import android.databinding.ViewDataBinding;
+import androidx.databinding.ViewDataBinding;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
-import android.support.annotation.MainThread;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -37,6 +36,8 @@ import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.medialibrary.media.Storage;
+import org.videolan.tools.MultiSelectAdapter;
+import org.videolan.tools.MultiSelectHelper;
 import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.databinding.BrowserItemBinding;
@@ -44,18 +45,20 @@ import org.videolan.vlc.databinding.BrowserItemSeparatorBinding;
 import org.videolan.vlc.gui.DiffUtilAdapter;
 import org.videolan.vlc.gui.helpers.SelectorViewHolder;
 import org.videolan.vlc.util.AndroidDevices;
+import org.videolan.vlc.util.Constants;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.videolan.medialibrary.media.MediaLibraryItem.FLAG_SELECTED;
 import static org.videolan.medialibrary.media.MediaLibraryItem.TYPE_MEDIA;
 import static org.videolan.medialibrary.media.MediaLibraryItem.TYPE_STORAGE;
 
-public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBrowserAdapter.ViewHolder> {
+public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBrowserAdapter.ViewHolder> implements MultiSelectAdapter<MediaLibraryItem> {
     protected static final String TAG = "VLC/BaseBrowserAdapter";
 
     private static int FOLDER_RES_ID = R.drawable.ic_menu_folder;
+
+    private MultiSelectHelper<MediaLibraryItem> multiSelectHelper;
 
     private static class Images {
         private static final BitmapDrawable IMAGE_FOLDER = new BitmapDrawable(VLCApplication.getAppResources(), BitmapFactory.decodeResource(VLCApplication.getAppResources(), FOLDER_RES_ID));
@@ -69,22 +72,18 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
         private static final BitmapDrawable IMAGE_QA_DOWNLOAD = new BitmapDrawable(VLCApplication.getAppResources(), BitmapFactory.decodeResource(VLCApplication.getAppResources(), R.drawable.ic_browser_download_normal));
     }
     protected final BaseBrowserFragment fragment;
-    private int mMediaCount = 0, mSelectionCount = 0;
-    private final boolean mNetworkRoot, mSpecialIcons, mFavorites;
+    private int mMediaCount = 0;
+    private final boolean mNetworkRoot, mSpecialIcons;
 
     BaseBrowserAdapter(BaseBrowserFragment fragment) {
-        this(fragment, false);
-    }
-
-    BaseBrowserAdapter(BaseBrowserFragment fragment, boolean favorites) {
         this.fragment = fragment;
+        multiSelectHelper = new MultiSelectHelper<>(this, Constants.UPDATE_SELECTION);
         final boolean root = fragment.isRootDirectory();
         final boolean fileBrowser = fragment instanceof FileBrowserFragment;
         final boolean filesRoot = root && fileBrowser;
         mNetworkRoot = root && fragment instanceof NetworkBrowserFragment;
         final String mrl = fragment.getMrl();
         mSpecialIcons = filesRoot || fileBrowser && mrl != null && mrl.endsWith(AndroidDevices.EXTERNAL_PUBLIC_DIRECTORY);
-        mFavorites = favorites;
     }
 
     @Override
@@ -113,17 +112,23 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
         else if (payloads.get(0) instanceof CharSequence){
             ((MediaViewHolder) holder).binding.text.setVisibility(View.VISIBLE);
             ((MediaViewHolder) holder).binding.text.setText((CharSequence) payloads.get(0));
-        } else if (payloads.get(0) instanceof MediaWrapper)
-            holder.selectView(((MediaWrapper)payloads.get(0)).hasStateFlags(FLAG_SELECTED));
+        } else if (payloads.get(0) instanceof Integer) {
+            final int value = (Integer) payloads.get(0);
+            if (value == Constants.UPDATE_SELECTION) holder.selectView(multiSelectHelper.isSelected(position));
+        }
     }
 
     private void onBindMediaViewHolder(final MediaViewHolder vh, int position) {
         final MediaWrapper media = (MediaWrapper) getItem(position);
+        final boolean isFavorite = media.hasStateFlags(MediaLibraryItem.FLAG_FAVORITE);
         vh.binding.setItem(media);
-        vh.binding.setHasContextMenu(!mNetworkRoot || mFavorites);
+        vh.binding.setHasContextMenu((!mNetworkRoot || isFavorite)
+                && !"content".equals(media.getUri().getScheme())
+                && !"otg".equals(media.getUri().getScheme()));
+        if (media.getType() != MediaWrapper.TYPE_DIR) vh.binding.setFilename(media.getFileName());
         if (mNetworkRoot) vh.binding.setProtocol(getProtocol(media));
         vh.binding.setCover(getIcon(media, mSpecialIcons));
-        vh.selectView(media.hasStateFlags(FLAG_SELECTED));
+        vh.selectView(multiSelectHelper.isSelected(position));
     }
 
     @Override
@@ -131,8 +136,8 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
         return getDataset().size();
     }
 
-    public MediaLibraryItem get(int position) {
-        return getDataset().get(position);
+    public MultiSelectHelper<MediaLibraryItem> getMultiSelectHelper() {
+        return multiSelectHelper;
     }
 
     public abstract class ViewHolder<T extends ViewDataBinding> extends SelectorViewHolder<T> {
@@ -174,6 +179,7 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
             fragment.browse(mw, binding.browserCheckbox.isChecked());
         }
 
+        @Override
         public void onCheckBoxClick(View v) {
             if (getItem(getLayoutPosition()).getItemType() == TYPE_STORAGE)
                 checkBoxAction(v, ((Storage) getItem(getLayoutPosition())).getUri().toString());
@@ -184,21 +190,24 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
             return TYPE_MEDIA;
         }
 
+        @Override
         public void onClick(View v){
             int position = getLayoutPosition();
             if (position < getDataset().size() && position >= 0)
                 fragment.onClick(v, position, getDataset().get(position));
         }
 
+        @Override
         public void onMoreClick(View v) {
             int position = getLayoutPosition();
             if (position < getDataset().size() && position >= 0)
                 fragment.onCtxClick(v, position, getDataset().get(position));
         }
 
+        @Override
         public boolean onLongClick(View v) {
             int position = getLayoutPosition();
-            if (getItem(position).getItemType() == TYPE_STORAGE && VLCApplication.showTvUi()) {
+            if (getItem(position).getItemType() == TYPE_STORAGE && AndroidDevices.showTvUi(itemView.getContext())) {
                 binding.browserCheckbox.toggle();
                 onCheckBoxClick(binding.browserCheckbox);
                 return true;
@@ -209,8 +218,7 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
 
         @Override
         protected boolean isSelected() {
-            final MediaLibraryItem item = getItem(getLayoutPosition());
-            return item != null && item.hasStateFlags(FLAG_SELECTED);
+            return multiSelectHelper.isSelected(getLayoutPosition());
         }
     }
 
@@ -234,12 +242,14 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
         return getDataset();
     }
 
+    @Override
     public MediaLibraryItem getItem(int position){
         if (position < 0 || position >= getDataset().size())
             return null;
         return getDataset().get(position);
     }
 
+    @Override
     public int getItemViewType(int position){
         return getItem(position).getItemType();
     }
@@ -282,30 +292,6 @@ public class BaseBrowserAdapter extends DiffUtilAdapter<MediaLibraryItem, BaseBr
     }
 
     protected void checkBoxAction(View v, String mrl){}
-
-    List<MediaWrapper> getSelection() {
-        List<MediaWrapper> selection = new ArrayList<>();
-        for (MediaLibraryItem item : getDataset()) {
-            if (item.hasStateFlags(FLAG_SELECTED))
-                selection.add((MediaWrapper) item);
-        }
-        return selection;
-    }
-
-    @MainThread
-    int getSelectionCount() {
-        return mSelectionCount;
-    }
-
-    @MainThread
-    void resetSelectionCount() {
-        mSelectionCount = 0;
-    }
-
-    @MainThread
-    void updateSelectionCount(boolean selected) {
-        mSelectionCount += selected ? 1 : -1;
-    }
 
     @SuppressWarnings("unchecked")
     @Override

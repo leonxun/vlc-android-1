@@ -30,14 +30,15 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.widget.ProgressBar;
 
-import org.videolan.vlc.MediaParsingService;
+import org.videolan.vlc.MediaParsingServiceKt;
 import org.videolan.vlc.R;
 import org.videolan.vlc.StartActivity;
 import org.videolan.vlc.gui.preferences.PreferencesActivity;
 import org.videolan.vlc.gui.tv.browser.BaseTvActivity;
-import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.Permissions;
 import org.videolan.vlc.util.Util;
+
+import androidx.fragment.app.FragmentManager;
 
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 public class MainTvActivity extends BaseTvActivity {
@@ -68,7 +69,7 @@ public class MainTvActivity extends BaseTvActivity {
 
         setContentView(R.layout.tv_main);
 
-        final android.support.v4.app.FragmentManager fragmentManager = getSupportFragmentManager();
+        final FragmentManager fragmentManager = getSupportFragmentManager();
         mBrowseFragment = (MainTvFragment) fragmentManager.findFragmentById(R.id.browse_fragment);
         mProgressBar = findViewById(R.id.tv_main_progress);
     }
@@ -79,7 +80,7 @@ public class MainTvActivity extends BaseTvActivity {
         if (requestCode == ACTIVITY_RESULT_PREFERENCES) {
             switch (resultCode) {
                 case PreferencesActivity.RESULT_RESCAN:
-                    startService(new Intent(Constants.ACTION_RELOAD, null,this, MediaParsingService.class));;
+                    MediaParsingServiceKt.reload(this);
                     break;
                 case PreferencesActivity.RESULT_RESTART:
                 case PreferencesActivity.RESULT_RESTART_APP:
@@ -136,12 +137,8 @@ public class MainTvActivity extends BaseTvActivity {
         }
     };
 
+    @Override
     protected void refresh() {
         mMediaLibrary.reload();
-    }
-
-    @Override
-    public void onNetworkConnectionChanged(boolean connected) {
-        mBrowseFragment.updateBrowsers();
     }
 }

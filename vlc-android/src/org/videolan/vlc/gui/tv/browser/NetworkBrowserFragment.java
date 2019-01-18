@@ -24,16 +24,12 @@
 package org.videolan.vlc.gui.tv.browser;
 
 import android.annotation.TargetApi;
-import android.arch.lifecycle.Observer;
-import android.arch.lifecycle.ViewModelProviders;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v4.content.LocalBroadcastManager;
 
 import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.vlc.ExternalMonitor;
@@ -44,6 +40,11 @@ import org.videolan.vlc.viewmodels.browser.NetworkModel;
 import java.util.List;
 import java.util.Map;
 
+import androidx.annotation.Nullable;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProviders;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 public class NetworkBrowserFragment extends MediaSortedFragment<NetworkModel> {
 
@@ -53,14 +54,14 @@ public class NetworkBrowserFragment extends MediaSortedFragment<NetworkModel> {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        viewModel = ViewModelProviders.of(this, new NetworkModel.Factory(mUri.toString(), mShowHiddenFiles)).get(NetworkModel.class);
+        viewModel = ViewModelProviders.of(this, new NetworkModel.Factory(requireContext(), mUri.toString(), mShowHiddenFiles)).get(NetworkModel.class);
         viewModel.getCategories().observe(this, new Observer<Map<String, List<MediaLibraryItem>>>() {
             @Override
             public void onChanged(@Nullable Map<String, List<MediaLibraryItem>> stringListMap) {
                 if (stringListMap != null) update(stringListMap);
             }
         });
-        ExternalMonitor.connected.observe(this, new Observer<Boolean>() {
+        ExternalMonitor.INSTANCE.getConnected().observe(this, new Observer<Boolean>() {
             @Override
             public void onChanged(@Nullable Boolean connected) {
                 refresh(connected);

@@ -20,97 +20,67 @@
 
 package org.videolan.vlc.viewmodels
 
-import android.arch.lifecycle.MediatorLiveData
-import android.arch.lifecycle.ViewModel
-import kotlinx.coroutines.experimental.CommonPool
-import kotlinx.coroutines.experimental.android.UI
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.withContext
-import org.videolan.medialibrary.Medialibrary
+import android.content.Context
+import androidx.lifecycle.MutableLiveData
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.actor
 import org.videolan.medialibrary.media.MediaLibraryItem
-import org.videolan.vlc.util.*
+import org.videolan.vlc.util.FilterDelegate
+import org.videolan.vlc.util.LiveDataset
+import org.videolan.vlc.util.ModelsHelper
+import org.videolan.vlc.util.map
 
 private const val TAG = "VLC/BaseModel"
-abstract class BaseModel<T : MediaLibraryItem> : ViewModel(), RefreshModel {
-
-    var sort = Medialibrary.SORT_ALPHA
-    var desc = false
-    private var filtering = false
-    protected open val sortKey = this.javaClass.simpleName!!
-
-    open fun canSortByName() = true
-    open fun canSortByFileNameName() = false
-    open fun canSortByDuration() = false
-    open fun canSortByInsertionDate() = false
-    open fun canSortByLastModified() = false
-    open fun canSortByReleaseDate() = false
-    open fun canSortByFileSize() = false
-    open fun canSortByArtist() = false
-    open fun canSortByAlbum ()= false
-    open fun canSortByPlayCount() = false
+@ExperimentalCoroutinesApi
+@ObsoleteCoroutinesApi
+abstract class BaseModel<T : MediaLibraryItem>(context: Context) : SortableModel(context) {
 
     private val filter by lazy(LazyThreadSafetyMode.NONE) { FilterDelegate(dataset) }
 
-    val dataset by lazy {
-        fetch()
-        LiveDataset<T>()
-    }
+    val dataset = LiveDataset<T>()
+    open val loading = MutableLiveData<Boolean>().apply { value = false }
 
     val categories by lazy(LazyThreadSafetyMode.NONE) {
-        MediatorLiveData<Map<String, List<MediaLibraryItem>>>().apply {
-            addSource(dataset, {
-                uiJob(false) { value = withContext(CommonPool) { ModelsHelper.splitList(sort, it!!.toList()) } }
-            })
-        }
+        map(dataset) { ModelsHelper.splitList(sort, it!!.toList()) }
     }
 
     val sections by lazy(LazyThreadSafetyMode.NONE) {
-        MediatorLiveData<List<MediaLibraryItem>>().apply {
-            addSource(dataset, {
-                uiJob(false) { value = withContext(CommonPool) { ModelsHelper.generateSections(sort, it!!.toList()) } }
-            })
-        }
+        map(dataset) { ModelsHelper.generateSections(sort, it!!.toList()) }
     }
 
     @Suppress("UNCHECKED_CAST")
     protected val updateActor by lazy {
-        actor<Update>(UI, capacity = Channel.UNLIMITED) {
-            for (update in channel) when (update) {
+        actor<Update>(capacity = Channel.UNLIMITED) {
+            for (update in channel) if (isActive) when (update) {
                 Refresh -> updateList()
                 is Filter -> filter.filter(update.query)
                 is MediaUpdate -> updateItems(update.mediaList as List<T>)
                 is MediaAddition -> addMedia(update.media as T)
                 is MediaListAddition -> addMedia(update.mediaList as List<T>)
                 is Remove -> removeMedia(update.media as T)
-            }
+            } else channel.close()
         }
     }
 
-    override fun refresh() = updateActor.offer(Refresh)
+    override fun refresh() : Boolean {
+        if (!updateActor.isClosedForSend) updateActor.offer(Refresh)
+        return true
+    }
 
-    open fun sort(sort: Int) {
-        if (canSortBy(sort)) {
-            desc = when (this.sort) {
-                Medialibrary.SORT_DEFAULT -> sort == Medialibrary.SORT_ALPHA
-                sort -> !desc
-                else -> false
-            }
-            this.sort = sort
-            refresh()
+    fun remove(mw: T) {
+        if (!updateActor.isClosedForSend) updateActor.offer(Remove(mw))
+    }
+
+    override fun filter(query: String?) {
+        if (!updateActor.isClosedForSend) {
+            filterQuery = query
+            updateActor.offer(Filter(query))
         }
     }
 
-    fun remove(mw: T) = updateActor.offer(Remove(mw))
-
-    fun filter(query: String?) {
-        filtering = true
-        updateActor.offer(Filter(query))
-    }
-
-    fun restore() {
-        if (filtering) updateActor.offer(Filter(null))
-        filtering = false
+    override fun restore() {
+        if (filterQuery !== null ) filter(null)
     }
 
     protected open fun removeMedia(media: T) = dataset.remove(media)
@@ -120,7 +90,7 @@ abstract class BaseModel<T : MediaLibraryItem> : ViewModel(), RefreshModel {
     open suspend fun addMedia(mediaList: List<T>) = dataset.add(mediaList)
 
     protected open suspend fun updateItems(mediaList: List<T>) {
-        dataset.value = withContext(CommonPool) {
+        dataset.value = withContext(Dispatchers.Default) {
             val list = dataset.value
             val iterator = list.listIterator()
             while (iterator.hasNext()) {
@@ -136,10 +106,9 @@ abstract class BaseModel<T : MediaLibraryItem> : ViewModel(), RefreshModel {
 
     protected open suspend fun updateList() {}
 
-    protected abstract fun fetch()
-
-    fun getKey() : String {
-        return sortKey
+    override fun onCleared() {
+        updateActor.close()
+        super.onCleared()
     }
 }
 

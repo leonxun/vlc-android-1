@@ -15,7 +15,7 @@
             name="bgColor"
             type="int" />
     </data>
-    <android.support.constraint.ConstraintLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@{bgColor}"
@@ -23,6 +23,8 @@
         android:onClick="@{holder::onClick}"
         android:paddingBottom="4dp"
         android:paddingTop="4dp"
+        android:paddingLeft="@dimen/listview_side_padding"
+        android:paddingRight="@dimen/listview_side_padding"
         android:focusable="true"
         android:onLongClick="@{holder::onLongClick}"  >
         <ImageView
@@ -58,5 +60,5 @@
             app:layout_constraintStart_toEndOf="@id/icon"
             app:layout_constraintEnd_toEndOf="parent"/>
 
-    </android.support.constraint.ConstraintLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>

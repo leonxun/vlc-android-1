@@ -1,35 +1,39 @@
 package org.videolan.vlc.media
 
-import android.arch.lifecycle.MutableLiveData
+import android.content.Context
 import android.net.Uri
-import android.support.annotation.MainThread
 import android.support.v4.media.session.PlaybackStateCompat
 import android.widget.Toast
-import kotlinx.coroutines.experimental.*
-import kotlinx.coroutines.experimental.android.UI
-import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.actor
+import androidx.annotation.MainThread
+import androidx.lifecycle.MutableLiveData
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.actor
 import org.videolan.libvlc.*
 import org.videolan.medialibrary.media.MediaWrapper
 import org.videolan.vlc.BuildConfig
-import org.videolan.vlc.RendererDelegate
-import org.videolan.vlc.VLCApplication
+import org.videolan.vlc.PlaybackService
 import org.videolan.vlc.gui.preferences.PreferencesActivity
-import org.videolan.vlc.util.VLCIO
+import org.videolan.vlc.repository.SlaveRepository
+import org.videolan.vlc.util.Settings
 import org.videolan.vlc.util.VLCInstance
 import org.videolan.vlc.util.VLCOptions
-import org.videolan.vlc.util.uiJob
 import kotlin.math.abs
 
+@ObsoleteCoroutinesApi
+@ExperimentalCoroutinesApi
 @Suppress("EXPERIMENTAL_FEATURE_WARNING")
-class PlayerController : IVLCVout.Callback, MediaPlayer.EventListener {
+class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.EventListener, CoroutineScope {
+    override val coroutineContext = Dispatchers.Main.immediate
 
-//    private val exceptionHandler by lazy(LazyThreadSafetyMode.NONE) { CoroutineExceptionHandler { _, _ -> onPlayerError() } }
+    //    private val exceptionHandler by lazy(LazyThreadSafetyMode.NONE) { CoroutineExceptionHandler { _, _ -> onPlayerError() } }
     private val playerContext by lazy(LazyThreadSafetyMode.NONE) { newSingleThreadContext("vlc-player") }
-    private val settings by lazy(LazyThreadSafetyMode.NONE) { VLCApplication.getSettings() }
+    private val settings by lazy(LazyThreadSafetyMode.NONE) { Settings.getInstance(context) }
     val progress by lazy(LazyThreadSafetyMode.NONE) { MutableLiveData<Progress>().apply { value = Progress() } }
+    private val slaveRepository by lazy { SlaveRepository.getInstance(context) }
 
-    private var mediaplayer = newMediaPlayer()
+    var mediaplayer = newMediaPlayer()
+        private set
     var switchToVideo = false
     var seekable = false
     var pausable = false
@@ -68,14 +72,14 @@ class PlayerController : IVLCVout.Callback, MediaPlayer.EventListener {
         it.release()
     }
 
-    private var mediaplayerEventListener: MediaPLayerEventListener? = null
-    internal fun startPlayback(media: Media, listener: MediaPLayerEventListener) {
+    private var mediaplayerEventListener: MediaPlayerEventListener? = null
+    internal fun startPlayback(media: Media, listener: MediaPlayerEventListener) {
         mediaplayerEventListener = listener
         resetPlaybackState(media.duration)
         mediaplayer.setEventListener(null)
         mediaplayer.media = media.apply { if (hasRenderer) parse() }
         mediaplayer.setEventListener(this@PlayerController)
-        mediaplayer.setEqualizer(VLCOptions.getEqualizerSetFromSettings(VLCApplication.getAppContext()))
+        mediaplayer.setEqualizer(VLCOptions.getEqualizerSetFromSettings(context))
         mediaplayer.setVideoTitleDisplay(MediaPlayer.Position.Disable, 0)
         mediaplayer.play()
         if (mediaplayer.rate == 1.0f && settings.getBoolean(PreferencesActivity.KEY_PLAYBACK_SPEED_PERSIST, true))
@@ -179,36 +183,35 @@ class PlayerController : IVLCVout.Callback, MediaPlayer.EventListener {
         player.setEventListener(null)
         if (isVideoPlaying()) player.vlcVout.detachViews()
         releaseMedia()
-        launch(newSingleThreadContext("vlc-player-release")) {
+        launch(Dispatchers.IO) {
             if (BuildConfig.DEBUG) { // Warn if player release is blocking
                 try {
                     withTimeout(5000, { player.release() })
                 } catch (exception: TimeoutCancellationException) {
-                    uiJob { Toast.makeText(VLCApplication.getAppContext(), "media stop has timeouted!", Toast.LENGTH_LONG).show() }
+                    launch { Toast.makeText(context, "media stop has timeouted!", Toast.LENGTH_LONG).show() }
                 }
             } else player.release()
         }
         setPlaybackStopped()
     }
 
-    fun setSlaves(media: Media, mw: MediaWrapper) = uiJob(false) {
+    fun setSlaves(media: Media, mw: MediaWrapper) = launch {
         val slaves = mw.slaves
-        slaves?.let { for (slave in it) media.addSlave(slave) }
+        slaves?.let { it.forEach { slave -> media.addSlave(slave) } }
         media.release()
-        val list = withContext(VLCIO) {
-            MediaDatabase.getInstance().run {
-                if (slaves != null) saveSlaves(mw)
-                getSlaves(mw.location)
-            }
+        slaves?.let {
+            slaveRepository.saveSlaves(mw)?.forEach { it.join() }
         }
-        for (slave in list) mediaplayer.addSlave(slave.type, Uri.parse(slave.uri), false)
+        slaveRepository.getSlaves(mw.location).forEach { slave ->
+            mediaplayer.addSlave(slave.type, Uri.parse(slave.uri), false)
+        }
     }
 
     private fun newMediaPlayer() : MediaPlayer {
         return MediaPlayer(VLCInstance.get()).apply {
-            setAudioDigitalOutputEnabled(VLCOptions.isAudioDigitalOutputEnabled(VLCApplication.getSettings()));
-            VLCOptions.getAout(VLCApplication.getSettings())?.let { setAudioOutput(it) }
-            setRenderer(RendererDelegate.selectedRenderer.value)
+            setAudioDigitalOutputEnabled(VLCOptions.isAudioDigitalOutputEnabled(settings))
+            VLCOptions.getAout(settings)?.let { setAudioOutput(it) }
+            setRenderer(PlaybackService.Companion.renderer.value)
             this.vlcVout.addCallback(this@PlayerController)
         }
     }
@@ -284,7 +287,7 @@ class PlayerController : IVLCVout.Callback, MediaPlayer.EventListener {
     }
 
     private var lastTime = 0L
-    private val eventActor = actor<MediaPlayer.Event>(UI, Channel.UNLIMITED) {
+    private val eventActor = actor<MediaPlayer.Event>(capacity = Channel.UNLIMITED) {
         for (event in channel) {
             when (event.type) {
                 MediaPlayer.Event.Playing -> playbackState = PlaybackStateCompat.STATE_PLAYING
@@ -305,7 +308,8 @@ class PlayerController : IVLCVout.Callback, MediaPlayer.EventListener {
         }
     }
 
-    private fun updateProgress(newTime: Long = progress.value?.time ?: 0L, newLength: Long = progress.value?.length ?: 0L) {
+    @JvmOverloads
+    fun updateProgress(newTime: Long = progress.value?.time ?: 0L, newLength: Long = progress.value?.length ?: 0L) {
         progress.value = progress.value?.apply { time = newTime; length = newLength }
     }
 
@@ -322,13 +326,13 @@ class PlayerController : IVLCVout.Callback, MediaPlayer.EventListener {
 //    private fun onPlayerError() {
 //        launch(UI) {
 //            restart()
-//            Toast.makeText(VLCApplication.getAppContext(), VLCApplication.getAppContext().getString(R.string.feedback_player_crashed), Toast.LENGTH_LONG).show()
+//            Toast.makeText(context, context.getString(R.string.feedback_player_crashed), Toast.LENGTH_LONG).show()
 //        }
 //    }
 }
 
 class Progress(var time: Long = 0L, var length: Long = 0L)
 
-internal interface MediaPLayerEventListener {
+internal interface MediaPlayerEventListener {
     suspend fun onEvent(event: MediaPlayer.Event)
 }

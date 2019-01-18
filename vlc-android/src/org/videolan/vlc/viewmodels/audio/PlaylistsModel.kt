@@ -20,17 +20,47 @@
 
 package org.videolan.vlc.viewmodels.audio
 
-import kotlinx.coroutines.experimental.withContext
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.videolan.medialibrary.Medialibrary
 import org.videolan.medialibrary.media.MediaLibraryItem
-import org.videolan.vlc.util.VLCIO
+import org.videolan.vlc.util.EmptyMLCallbacks
 
 
-class PlaylistsModel: AudioModel() {
+class PlaylistsModel(context: Context): AudioModel(context), Medialibrary.PlaylistsCb by EmptyMLCallbacks {
+
+    override fun onMedialibraryReady() {
+        super.onMedialibraryReady()
+        medialibrary.addPlaylistCb(this)
+    }
+
+    override fun onCleared() {
+        medialibrary.removePlaylistCb(this)
+        super.onCleared()
+    }
 
     override fun canSortByDuration() = true
 
     @Suppress("UNCHECKED_CAST")
     override suspend fun updateList() {
-        dataset.value = withContext(VLCIO) { medialibrary.getPlaylists(sort, desc).toMutableList() as MutableList<MediaLibraryItem> }
+        dataset.value = withContext(Dispatchers.IO) { medialibrary.getPlaylists(sort, desc).toMutableList() as MutableList<MediaLibraryItem> }
+    }
+
+    class Factory(private val context: Context): ViewModelProvider.NewInstanceFactory() {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            @Suppress("UNCHECKED_CAST")
+            return PlaylistsModel(context.applicationContext) as T
+        }
+    }
+
+    override fun onPlaylistsAdded() {
+        refresh()
+    }
+
+    override fun onPlaylistsDeleted() {
+        refresh()
     }
 }

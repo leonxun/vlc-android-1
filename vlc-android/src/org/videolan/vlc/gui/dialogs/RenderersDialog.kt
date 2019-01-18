@@ -20,15 +20,17 @@
 package org.videolan.vlc.gui.dialogs
 
 import android.app.Dialog
-import android.arch.lifecycle.Observer
 import android.os.Bundle
-import android.support.v4.app.DialogFragment
-import android.support.v4.content.ContextCompat
-import android.support.v7.widget.LinearLayoutManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.Observer
+import androidx.recyclerview.widget.LinearLayoutManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import org.videolan.libvlc.RendererItem
 import org.videolan.vlc.PlaybackService
 import org.videolan.vlc.R
@@ -36,25 +38,21 @@ import org.videolan.vlc.RendererDelegate
 import org.videolan.vlc.databinding.DialogRenderersBinding
 import org.videolan.vlc.databinding.ItemRendererBinding
 import org.videolan.vlc.gui.DiffUtilAdapter
-import org.videolan.vlc.gui.PlaybackServiceActivity
 import org.videolan.vlc.gui.helpers.SelectorViewHolder
 import org.videolan.vlc.gui.helpers.UiTools
 
-class RenderersDialog : DialogFragment(), PlaybackService.Client.Callback {
+const private val TAG = "VLC/RenderersDialog"
 
-    companion object {
-        private val TAG = "VLC/RenderersDialog"
-    }
+@ObsoleteCoroutinesApi
+@ExperimentalCoroutinesApi
+class RenderersDialog : DialogFragment() {
     private var renderers = RendererDelegate.renderers.value
     private lateinit var mBinding: DialogRenderersBinding
     private val mAdapter = RendererAdapter()
     private val mClickHandler = RendererClickhandler()
-    private lateinit var mHelper: PlaybackServiceActivity.Helper
-    private var mService: PlaybackService? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        mHelper = PlaybackServiceActivity.Helper(activity, this)
         RendererDelegate.renderers.observe(this, Observer {
             if (it !== null) {
                 renderers = it
@@ -64,9 +62,9 @@ class RenderersDialog : DialogFragment(), PlaybackService.Client.Callback {
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val inflater = LayoutInflater.from(context)
+        val inflater = LayoutInflater.from(requireContext())
         mBinding = DialogRenderersBinding.inflate(inflater, null)
-        val dialog = Dialog(context)
+        val dialog = Dialog(requireContext())
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(mBinding.root)
         return dialog
@@ -82,27 +80,9 @@ class RenderersDialog : DialogFragment(), PlaybackService.Client.Callback {
         mBinding.holder = mClickHandler;
         mBinding.renderersList.layoutManager = LinearLayoutManager(view.context)
         mBinding.renderersList.adapter = mAdapter
-        mBinding.renderersDisconnect.isEnabled = RendererDelegate.hasRenderer()
-        mBinding.renderersDisconnect.setTextColor(ContextCompat.getColor(view.context, if (RendererDelegate.hasRenderer()) R.color.orange800 else R.color.grey400))
+        mBinding.renderersDisconnect.isEnabled = PlaybackService.hasRenderer()
+        mBinding.renderersDisconnect.setTextColor(ContextCompat.getColor(view.context, if (PlaybackService.hasRenderer()) R.color.orange800 else R.color.grey400))
         mAdapter.update(renderers)
-    }
-
-    override fun onStart() {
-        super.onStart()
-        mHelper.onStart()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        mHelper.onStop()
-    }
-
-    override fun onConnected(service: PlaybackService) {
-        mService = service
-    }
-
-    override fun onDisconnected() {
-        mService = null
     }
 
     private inner class RendererAdapter : DiffUtilAdapter<RendererItem, SelectorViewHolder<ItemRendererBinding>>() {
@@ -115,7 +95,7 @@ class RenderersDialog : DialogFragment(), PlaybackService.Client.Callback {
 
         override fun onBindViewHolder(holder: SelectorViewHolder<ItemRendererBinding>, position: Int) {
             holder.binding.renderer = renderers[position]
-            if (renderers[position] == RendererDelegate.selectedRenderer.value)
+            if (renderers[position] == PlaybackService.renderer.value)
             holder.binding.rendererName.setTextColor(ContextCompat.getColor(holder.itemView.context, R.color.orange800))
         }
 
@@ -126,11 +106,12 @@ class RenderersDialog : DialogFragment(), PlaybackService.Client.Callback {
 
     inner class RendererClickhandler {
         fun connect(item: RendererItem?) {
-            mService?.setRenderer(item)
+            PlaybackService.renderer.value = item
             dismissAllowingStateLoss()
-            RendererDelegate.selectRenderer(item)
-            if (item !== null) activity?.window?.findViewById<View>(R.id.audio_player_container)?.let {
-                UiTools.snacker(it, getString(R.string.casting_connected_renderer, item.displayName))
+            item?.run {
+                activity?.window?.findViewById<View>(R.id.audio_player_container)?.let {
+                    UiTools.snacker(it, getString(R.string.casting_connected_renderer, displayName))
+                }
             }
         }
     }

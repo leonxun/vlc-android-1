@@ -5,18 +5,17 @@ import android.net.Uri
 import android.os.Bundle
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
-import android.util.Log
 import android.view.KeyEvent
-import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.launch
 import org.videolan.medialibrary.Tools
 import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.medialibrary.media.MediaWrapper
 import org.videolan.vlc.extensions.ExtensionsManager
 import org.videolan.vlc.media.BrowserProvider
-import org.videolan.vlc.util.AndroidDevices
-import org.videolan.vlc.util.Constants
-import org.videolan.vlc.util.VoiceSearchParams
-import org.videolan.vlc.util.registerMedialibrary
+import org.videolan.vlc.util.*
 
 private const val TAG = "VLC/MediaSessionCallback"
 
@@ -28,11 +27,10 @@ internal class MediaSessionCallback(private val playbackService: PlaybackService
     }
 
     override fun onMediaButtonEvent(mediaButtonEvent: Intent): Boolean {
-        val keyEvent by lazy(LazyThreadSafetyMode.NONE) {  mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as KeyEvent? }
-        if (!playbackService.hasMedia() && keyEvent != null
+        val keyEvent = mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as KeyEvent? ?: return false
+        if (!playbackService.hasMedia()
                 && (keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY || keyEvent.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)) {
             return if (keyEvent.action == KeyEvent.ACTION_DOWN) {
-                Log.d(TAG, KeyEvent.keyCodeToString(keyEvent.keyCode))
                 PlaybackService.loadLastAudio(playbackService)
                 true
             } else false
@@ -44,10 +42,10 @@ internal class MediaSessionCallback(private val playbackService: PlaybackService
         when (action) {
             "shuffle" -> playbackService.shuffle()
             "repeat" -> playbackService.repeatType = when (playbackService.repeatType) {
-                Constants.REPEAT_NONE -> Constants.REPEAT_ALL
-                Constants.REPEAT_ALL -> Constants.REPEAT_ONE
-                Constants.REPEAT_ONE -> Constants.REPEAT_NONE
-                else -> Constants.REPEAT_NONE
+                REPEAT_NONE -> REPEAT_ALL
+                REPEAT_ALL -> REPEAT_ONE
+                REPEAT_ONE -> REPEAT_NONE
+                else -> REPEAT_NONE
             }
         }
     }
@@ -74,7 +72,7 @@ internal class MediaSessionCallback(private val playbackService: PlaybackService
             return
         }
         playbackService.mediaSession.setPlaybackState(PlaybackStateCompat.Builder().setState(PlaybackStateCompat.STATE_CONNECTING, playbackService.time, 1.0f).build())
-        launch {
+        GlobalScope.launch(Dispatchers.IO) {
             val vsp = VoiceSearchParams(query, extras)
             var items: Array<out MediaLibraryItem>? = null
             var tracks: Array<MediaWrapper>? = null
@@ -86,7 +84,7 @@ internal class MediaSessionCallback(private val playbackService: PlaybackService
                 vsp.isArtistFocus -> items = playbackService.medialibrary.searchArtist(vsp.artist)
                 vsp.isAlbumFocus -> items = playbackService.medialibrary.searchAlbum(vsp.album)
                 vsp.isGenreFocus -> items = playbackService.medialibrary.searchGenre(vsp.genre)
-                vsp.isSongFocus -> tracks = playbackService.medialibrary.searchMedia(vsp.song)!!.tracks
+                vsp.isSongFocus -> tracks = playbackService.medialibrary.searchMedia(vsp.song)!!
             }
             if (Tools.isArrayEmpty(tracks)) {
                 val result = playbackService.medialibrary.search(query)
@@ -111,7 +109,7 @@ internal class MediaSessionCallback(private val playbackService: PlaybackService
 
     override fun onSkipToPrevious() = playbackService.previous(false)
 
-    override fun onSeekTo(pos: Long) = playbackService.seek(pos)
+    override fun onSeekTo(pos: Long) = playbackService.seek(if (pos < 0) playbackService.time + pos else pos)
 
     override fun onFastForward() = playbackService.seek(Math.min(playbackService.length, playbackService.time + 5000))
 

@@ -1,6 +1,6 @@
 package org.videolan.vlc.util
 
-import android.arch.lifecycle.MutableLiveData
+import androidx.lifecycle.MutableLiveData
 
 
 class LiveDataset<T> : MutableLiveData<MutableList<T>>() {
@@ -19,11 +19,19 @@ class LiveDataset<T> : MutableLiveData<MutableList<T>>() {
         value = value.apply { add(item) }
     }
 
+    fun add(position: Int, item: T) {
+        value = value.apply { add(position, item) }
+    }
+
     fun add(items: List<T>) {
         value = value.apply { addAll(items.filter { !this.contains(it) }) }
     }
 
     fun remove(item: T) {
         value = value.apply { remove(item) }
+    }
+
+    fun remove(position: Int) {
+        value = value.apply { removeAt(position) }
     }
 }

@@ -24,18 +24,22 @@
 package org.videolan.vlc.gui.tv.browser;
 
 import android.annotation.TargetApi;
-import android.arch.lifecycle.Observer;
-import android.arch.lifecycle.ViewModelProviders;
+import android.app.Activity;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
 
 import org.videolan.medialibrary.media.MediaLibraryItem;
+import org.videolan.vlc.ExternalMonitor;
 import org.videolan.vlc.viewmodels.browser.BrowserModel;
 import org.videolan.vlc.viewmodels.browser.BrowserModelKt;
 
 import java.util.List;
 import java.util.Map;
+
+import androidx.annotation.Nullable;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProviders;
 
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 public class DirectoryBrowserFragment extends MediaSortedFragment<BrowserModel> {
@@ -45,11 +49,24 @@ public class DirectoryBrowserFragment extends MediaSortedFragment<BrowserModel> 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        viewModel = ViewModelProviders.of(this, new BrowserModel.Factory(mUri.toString(), BrowserModelKt.TYPE_FILE, mShowHiddenFiles)).get(BrowserModel.class);
+        viewModel = ViewModelProviders.of(this, new BrowserModel.Factory(requireContext(), mUri.toString(), BrowserModelKt.TYPE_FILE, mShowHiddenFiles)).get(BrowserModel.class);
         viewModel.getCategories().observe(this, new Observer<Map<String, List<MediaLibraryItem>>>() {
             @Override
             public void onChanged(@Nullable Map<String, List<MediaLibraryItem>> stringListMap) {
                 if (stringListMap != null) update(stringListMap);
+            }
+        });
+        ExternalMonitor.INSTANCE.getStorageUnplugged().observe(this, new Observer<Uri>() {
+            @Override
+            public void onChanged(Uri uri) {
+                if (mUri != null && "file".equals(mUri.getScheme())) {
+                    final String currentPath = mUri.getPath();
+                    final String unpluggedPath = uri.getPath();
+                    if (currentPath != null && unpluggedPath != null && currentPath.startsWith(unpluggedPath)) {
+                        final Activity activity = getActivity();
+                        if (activity != null) activity.finish();
+                    }
+                }
             }
         });
     }

@@ -20,39 +20,81 @@
 
 package org.videolan.vlc.providers
 
-import kotlinx.coroutines.experimental.CommonPool
-import kotlinx.coroutines.experimental.withContext
+import android.content.Context
+import androidx.lifecycle.Observer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
+import org.videolan.medialibrary.media.DummyItem
 import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.medialibrary.media.MediaWrapper
 import org.videolan.vlc.ExternalMonitor
-import org.videolan.vlc.media.MediaDatabase
+import org.videolan.vlc.R
+import org.videolan.vlc.repository.BrowserFavRepository
+import org.videolan.vlc.util.AndroidDevices
 import org.videolan.vlc.util.LiveDataset
-import java.util.*
 
-class NetworkProvider(dataset: LiveDataset<MediaLibraryItem>, url: String? = null, showHiddenFiles: Boolean): BrowserProvider(dataset, url, showHiddenFiles) {
+class NetworkProvider(context: Context, dataset: LiveDataset<MediaLibraryItem>, url: String? = null, showHiddenFiles: Boolean): BrowserProvider(context, dataset, url, showHiddenFiles), Observer<List<MediaWrapper>> {
 
-    override fun browseRoot() {
+    private val favorites = if (url == null && !AndroidDevices.showTvUi(context)) BrowserFavRepository.getInstance(context).networkFavorites else null
+
+    init {
+        favorites?.observeForever(this)
+    }
+
+    override suspend fun browseRoot() {
         if (ExternalMonitor.allowLan()) browse()
     }
 
-    suspend fun updateFavorites() : MutableList<MediaLibraryItem> {
-        if (ExternalMonitor.connected?.value != true) return mutableListOf()
-        val favs: MutableList<MediaLibraryItem> = withContext(CommonPool) { MediaDatabase.getInstance().allNetworkFav }.toMutableList()
-        if (!ExternalMonitor.allowLan()) {
-            val schemes = Arrays.asList("ftp", "sftp", "ftps", "http", "https")
-            val toRemove = favs.filterNotTo(mutableListOf()) { schemes.contains((it as MediaWrapper).uri.scheme) }
-            if (!toRemove.isEmpty()) for (mw in toRemove) favs.remove(mw)
-        }
-        return favs
-    }
-
-    override fun fetch() { if (ExternalMonitor.allowLan()) super.fetch() }
+    override fun fetch() {}
 
     override fun refresh(): Boolean {
-        if (url == null) {
-            dataset.value = mutableListOf()
-            browseRoot()
+        return if (url == null) {
+            dataset.value = mutableListOf<MediaLibraryItem>().apply {
+                getFavoritesList(favorites?.value)?.let { addAll(it) }
+            }
+            launch { browseRoot() }
+            true
         } else super.refresh()
-        return true
+    }
+
+    override fun parseSubDirectories() {
+        if (url != null) super.parseSubDirectories()
+    }
+
+    override fun stop(): Unit? {
+        launch(Dispatchers.IO) {
+            if (url == null) mutex.withLock {
+                mediabrowser?.changeEventListener(null)
+            }
+        }
+        return super.stop()
+    }
+
+    override fun release() {
+        favorites?.removeObserver(this)
+        super.release()
+    }
+
+    override fun onChanged(favs: List<MediaWrapper>?) {
+        val data = dataset.value.toMutableList()
+        data.listIterator().run {
+            while (hasNext()) {
+                val item = next()
+                if (item.hasStateFlags(MediaLibraryItem.FLAG_FAVORITE) || item is DummyItem) remove()
+            }
+        }
+        dataset.value = data.apply { getFavoritesList(favs)?.let { addAll(0, it) } }
+    }
+
+    private fun getFavoritesList(favs: List<MediaWrapper>?): MutableList<MediaLibraryItem>? {
+        if (favs?.isNotEmpty() == true) {
+            val list = mutableListOf<MediaLibraryItem>()
+            list.add(0, DummyItem(context.getString(R.string.network_favorites)))
+            for ((index, fav) in favs.withIndex()) list.add(index + 1, fav)
+            list.add(DummyItem(context.getString(R.string.network_shared_folders)))
+            return list
+        }
+        return null
     }
 }

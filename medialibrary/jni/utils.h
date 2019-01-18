@@ -24,6 +24,8 @@
 #include <medialibrary/Types.h>
 #include <medialibrary/IMediaLibrary.h>
 
+#define VLC_JNI_VERSION JNI_VERSION_1_2
+
 struct fields {
     jint SDK_INT;
     struct IllegalStateException {
@@ -46,6 +48,12 @@ struct fields {
         jmethodID onAlbumsDeletedId;
         jmethodID onTracksAddedId;
         jmethodID onTracksDeletedId;
+        jmethodID onGenresAddedId;
+        jmethodID onGenresModifiedId;
+        jmethodID onGenresDeletedId;
+        jmethodID onPlaylistsAddedId;
+        jmethodID onPlaylistsModifiedId;
+        jmethodID onPlaylistsDeletedId;
         jmethodID onDiscoveryStartedId;
         jmethodID onDiscoveryProgressId;
         jmethodID onDiscoveryCompletedId;
@@ -82,14 +90,14 @@ struct fields {
         jclass clazz;
         jmethodID initID;
     } HistoryItem;
-    struct MediaSearchAggregate {
-        jclass clazz;
-        jmethodID initID;
-    } MediaSearchAggregate;
     struct SearchAggregate {
         jclass clazz;
         jmethodID initID;
     } SearchAggregate;
+    struct Folder {
+        jclass clazz;
+        jmethodID initID;
+    } Folder;
 };
 
 jobject mediaToMediaWrapper(JNIEnv*, fields*, const medialibrary::MediaPtr &);
@@ -97,9 +105,8 @@ jobject convertAlbumObject(JNIEnv* env, fields *fields, medialibrary::AlbumPtr c
 jobject convertArtistObject(JNIEnv* env, fields *fields, medialibrary::ArtistPtr const& artistPtr);
 jobject convertGenreObject(JNIEnv* env, fields *fields, medialibrary::GenrePtr const& genrePtr);
 jobject convertPlaylistObject(JNIEnv* env, fields *fields, medialibrary::PlaylistPtr const& genrePtr);
+jobject convertFolderObject(JNIEnv* env, fields *fields, medialibrary::FolderPtr const& folderPtr);
 jobject convertSearchAggregateObject(JNIEnv* env, fields *fields, medialibrary::SearchAggregate const& searchAggregatePtr);
-jobject convertMediaSearchAggregateObject(JNIEnv* env, fields *fields, medialibrary::MediaSearchAggregate const& searchAggregatePtr);
-jobject convertHistoryItemObject(JNIEnv* env, fields *fields, medialibrary::HistoryPtr const& historyPtr);
 jobjectArray filteredArray(JNIEnv* env, jobjectArray array, jclass clazz, int removalCount = -1);
 
 #endif //VLC_MEDIALIB_UTILS_H

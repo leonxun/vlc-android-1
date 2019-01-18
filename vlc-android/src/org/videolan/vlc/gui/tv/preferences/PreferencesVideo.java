@@ -25,7 +25,7 @@ package org.videolan.vlc.gui.tv.preferences;
 import android.annotation.TargetApi;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.v7.preference.Preference;
+import androidx.preference.Preference;
 
 import org.videolan.vlc.R;
 import org.videolan.vlc.util.AndroidDevices;
@@ -49,7 +49,6 @@ public class PreferencesVideo extends BasePreferenceFragment {
 
         findPreference("force_list_portrait").setVisible(false);
         findPreference("save_brightness").setVisible(false);
-        findPreference("video_min_group_length").setVisible(false);
         findPreference("enable_double_tap_seek").setVisible(false);
         findPreference("enable_volume_gesture").setVisible(AndroidDevices.hasTsp);
         findPreference("enable_brightness_gesture").setVisible(AndroidDevices.hasTsp);

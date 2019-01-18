@@ -34,23 +34,22 @@ import android.text.TextUtils;
 import android.view.View;
 import android.widget.RemoteViews;
 
-import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.vlc.BuildConfig;
 import org.videolan.vlc.R;
 import org.videolan.vlc.StartActivity;
-import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.gui.helpers.AudioUtil;
 import org.videolan.vlc.util.Strings;
 import org.videolan.vlc.util.WorkersKt;
 
 import java.util.Locale;
 
+import static org.videolan.vlc.util.Constants.ACTION_REMOTE_BACKWARD;
+import static org.videolan.vlc.util.Constants.ACTION_REMOTE_FORWARD;
+import static org.videolan.vlc.util.Constants.ACTION_REMOTE_PLAYPAUSE;
+import static org.videolan.vlc.util.Constants.ACTION_REMOTE_STOP;
+
 abstract public class VLCAppWidgetProvider extends AppWidgetProvider {
     public static final String TAG = "VLC/VLCAppWidgetProvider";
-    public static final String ACTION_REMOTE_BACKWARD = Strings.buildPkgString("remote.Backward");
-    public static final String ACTION_REMOTE_PLAYPAUSE = Strings.buildPkgString("remote.PlayPause");
-    public static final String ACTION_REMOTE_STOP = Strings.buildPkgString("remote.Stop");
-    public static final String ACTION_REMOTE_FORWARD = Strings.buildPkgString("remote.Forward");
     public static final String ACTION_WIDGET_PREFIX = Strings.buildPkgString("widget.");
     public static final String ACTION_WIDGET_INIT = ACTION_WIDGET_PREFIX+"INIT";
     public static final String ACTION_WIDGET_UPDATE = ACTION_WIDGET_PREFIX+"UPDATE";
@@ -88,7 +87,7 @@ abstract public class VLCAppWidgetProvider extends AppWidgetProvider {
             final Intent iPlay = new Intent(ACTION_REMOTE_PLAYPAUSE);
             final Intent iStop = new Intent(ACTION_REMOTE_STOP);
             final Intent iForward = new Intent(ACTION_REMOTE_FORWARD);
-            final Intent iVlc = new Intent(VLCApplication.getAppContext(), StartActivity.class);
+            final Intent iVlc = new Intent(context, StartActivity.class);
 
             final PendingIntent piBackward = PendingIntent.getBroadcast(context, 0, iBackward, PendingIntent.FLAG_UPDATE_CURRENT);
             final PendingIntent piPlay = PendingIntent.getBroadcast(context, 0, iPlay, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -101,7 +100,7 @@ abstract public class VLCAppWidgetProvider extends AppWidgetProvider {
             views.setOnClickPendingIntent(R.id.stop, piStop);
             views.setOnClickPendingIntent(R.id.forward, piForward);
             views.setOnClickPendingIntent(R.id.cover, piVlc);
-            if (AndroidUtil.isJellyBeanMR1OrLater && TextUtils.getLayoutDirectionFromLocale(Locale.getDefault()) == View.LAYOUT_DIRECTION_RTL) {
+            if (TextUtils.getLayoutDirectionFromLocale(Locale.getDefault()) == View.LAYOUT_DIRECTION_RTL) {
                 final boolean black = this instanceof VLCAppWidgetProviderBlack;
                 views.setImageViewResource(R.id.forward, black ? R.drawable.ic_widget_previous_w : R.drawable.ic_widget_previous);
                 views.setImageViewResource(R.id.backward, black ? R.drawable.ic_widget_next_w : R.drawable.ic_widget_next);
@@ -109,8 +108,8 @@ abstract public class VLCAppWidgetProvider extends AppWidgetProvider {
         }
 
         if (ACTION_WIDGET_UPDATE.equals(action)) {
-            String title = intent.getStringExtra("title");
-            String artist = intent.getStringExtra("artist");
+            final String title = intent.getStringExtra("title");
+            final String artist = intent.getStringExtra("artist");
             final boolean isplaying = intent.getBooleanExtra("isplaying", false);
 
             views.setTextViewText(R.id.songName, title);
@@ -119,7 +118,7 @@ abstract public class VLCAppWidgetProvider extends AppWidgetProvider {
         } else if (ACTION_WIDGET_UPDATE_COVER.equals(action)) {
             final String artworkMrl = intent.getStringExtra("artworkMrl");
             if (!TextUtils.isEmpty(artworkMrl)) {
-                WorkersKt.runBackground(new Runnable() {
+                WorkersKt.runIO(new Runnable() {
                     @Override
                     public void run() {
                         final Bitmap cover = AudioUtil.readCoverBitmap(Uri.decode(artworkMrl), 320);

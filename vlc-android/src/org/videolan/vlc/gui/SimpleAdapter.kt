@@ -1,28 +1,28 @@
 package org.videolan.vlc.gui
 
-import android.support.v7.recyclerview.extensions.ListAdapter
-import android.support.v7.util.DiffUtil
-import android.support.v7.widget.RecyclerView
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.RecyclerView
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.vlc.databinding.SimpleItemBinding
 
-
-val cb = object : DiffUtil.ItemCallback<MediaLibraryItem>() {
+private val cb = object : DiffUtil.ItemCallback<MediaLibraryItem>() {
     override fun areItemsTheSame(oldItem: MediaLibraryItem, newItem: MediaLibraryItem) = oldItem == newItem
-
     override fun areContentsTheSame(oldItem: MediaLibraryItem, newItem: MediaLibraryItem) = true
 }
 
-class SimpleAdapter(val handler: FavoritesHandler) : ListAdapter<MediaLibraryItem, SimpleAdapter.ViewHolder>(cb) {
+class SimpleAdapter(val handler: ClickHandler) : ListAdapter<MediaLibraryItem, SimpleAdapter.ViewHolder>(cb) {
 
-    interface FavoritesHandler {
+    interface ClickHandler {
         fun onClick(item: MediaLibraryItem)
     }
 
+    private lateinit var inflater : LayoutInflater
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val inflater = LayoutInflater.from(parent.context);
+        if (!this::inflater.isInitialized) inflater = LayoutInflater.from(parent.context)
         return ViewHolder(handler, SimpleItemBinding.inflate(inflater, parent, false))
     }
 
@@ -30,7 +30,9 @@ class SimpleAdapter(val handler: FavoritesHandler) : ListAdapter<MediaLibraryIte
         holder.binding.item = getItem(position)
     }
 
-    class ViewHolder(val handler: FavoritesHandler, val binding: SimpleItemBinding) : RecyclerView.ViewHolder(binding.root) {
+    fun isEmpty() = itemCount == 0
+
+    class ViewHolder(handler: ClickHandler, val binding: SimpleItemBinding) : RecyclerView.ViewHolder(binding.root) {
         init {
             binding.handler = handler
         }

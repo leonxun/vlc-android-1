@@ -20,14 +20,14 @@
 package org.videolan.vlc.gui;
 
 import android.annotation.TargetApi;
-import android.arch.lifecycle.Observer;
-import android.arch.lifecycle.ViewModelProviders;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProviders;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v7.view.ActionMode;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
+import androidx.annotation.Nullable;
+import androidx.appcompat.view.ActionMode;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -72,9 +72,9 @@ public class HistoryFragment extends MediaBrowserFragment<HistoryModel> implemen
     @Override
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        mEmptyView = view.findViewById(android.R.id.empty);
+        mEmptyView = view.findViewById(R.id.empty);
         mRecyclerView = view.findViewById(android.R.id.list);
-        viewModel = ViewModelProviders.of(requireActivity()).get(HistoryModel.class);
+        viewModel = ViewModelProviders.of(requireActivity(), new HistoryModel.Factory(requireContext())).get(HistoryModel.class);
         viewModel.getDataset().observe(this, new Observer<List<MediaWrapper>>() {
             @Override
             public void onChanged(@Nullable List<MediaWrapper> mediaWrappers) {
@@ -84,8 +84,7 @@ public class HistoryFragment extends MediaBrowserFragment<HistoryModel> implemen
     }
 
     @Override
-    public void onStart() {
-        super.onStart();
+    protected void onRestart() {
         viewModel.refresh();
     }
 
@@ -146,6 +145,7 @@ public class HistoryFragment extends MediaBrowserFragment<HistoryModel> implemen
         return getString(R.string.history);
     }
 
+    @Override
     public void clear(){}
 
     private void updateEmptyView() {
@@ -158,6 +158,7 @@ public class HistoryFragment extends MediaBrowserFragment<HistoryModel> implemen
         }
     }
 
+    @Override
     public boolean isEmpty() {
         return mHistoryAdapter.isEmpty();
     }
@@ -193,10 +194,10 @@ public class HistoryFragment extends MediaBrowserFragment<HistoryModel> implemen
         if (!selection.isEmpty()) {
             switch (item.getItemId()) {
                 case R.id.action_history_play:
-                    MediaUtils.openList(getActivity(), selection, 0);
+                    MediaUtils.INSTANCE.openList(getActivity(), selection, 0);
                     break;
                 case R.id.action_history_append:
-                    MediaUtils.appendMedia(getActivity(), selection);
+                    MediaUtils.INSTANCE.appendMedia(getActivity(), selection);
                     break;
                 case R.id.action_history_info:
                     showInfoDialog(selection.get(0));
@@ -232,7 +233,7 @@ public class HistoryFragment extends MediaBrowserFragment<HistoryModel> implemen
             return;
         }
         if (position != 0) viewModel.moveUp((MediaWrapper) item);
-        MediaUtils.openMedia(v.getContext(), (MediaWrapper) item);
+        MediaUtils.INSTANCE.openMedia(v.getContext(), (MediaWrapper) item);
     }
 
     @Override

@@ -2,11 +2,11 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Main VLC Interface -->
-    <string name="app_name" translatable="false">VLC</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <string name="app_name" translatable="false">VLC</string>
     <string name="other">Other</string>
-    <string name="sortby">Sort by&#8230;</string>
+    <string name="sortby">Sort by…</string>
     <string name="sortby_name">Name</string>
     <string name="sortby_name_desc">Name (desc)</string>
     <string name="sortby_filename">File name</string>
@@ -19,6 +19,8 @@
     <string name="sortby_length_desc">Length (desc)</string>
     <string name="sortby_date">Date</string>
     <string name="sortby_date_desc">Date (desc)</string>
+    <string name="sortby_last_modified_date">Recently added</string>
+    <string name="sortby_last_modified_date_desc">Recently added (desc)</string>
     <string name="sortby_number">Nb tracks</string>
     <string name="sortby_number_desc">Nb tracks (desc)</string>
     <string name="searchable_hint">Search…</string>
@@ -46,6 +48,7 @@
     <string name="play_all">Play all</string>
     <string name="append_all">Append all</string>
     <string name="last_playlist">Last playlist</string>
+    <string name="last_playlist_shortcut">Resume playback</string>
     <string name="delete">Delete</string>
     <string name="remove">Remove</string>
     <string name="set_song">Set as ringtone</string>
@@ -53,6 +56,8 @@
     <string name="confirm_delete">Delete the file \'%1$s\'?</string>
     <string name="confirm_delete_folder">Delete the folder \'%1$s\' and all its contents?</string>
     <string name="confirm_delete_playlist">Delete playlist \'%1$s\'?</string>
+    <string name="confirm_remove_from_playlist">Remove \'%1$s\' from playlist?</string>
+    <string name="confirm_remove_from_playlist_anonymous">Remove from playlist?</string>
     <string name="ringtone_set">The file \'%1$s\' was set as the ringtone.</string>
     <string name="ringtone_error">An error occurred while setting the ringtone.</string>
     <string name="pause">Pause</string>
@@ -124,7 +129,6 @@
     <string name="repeat_all">Repeat all</string>
     <string name="previous">Previous</string>
     <string name="stop">Stop</string>
-    <string name="next">Next</string>
     <string name="firstsong">First song of the playlist</string>
     <string name="lastsong">Last song of the playlist</string>
 
@@ -151,6 +155,9 @@
     <string name="navmenu">navigation menu</string>
     <string name="advanced">advanced options</string>
     <string name="audio_boost_warning">Slide up again to go beyond 100%</string>
+    <string name="locked_in_portrait_mode">Locked in portrait mode\n(Long press on button to cancel)</string>
+    <string name="locked_in_landscape_mode">Locked in landscape mode\n(Long press on button to cancel)</string>
+    <string name="reset_orientation">Orientation reset</string>
 
     <plurals name="track_channels_info_quantity">
         <item quantity="one">1 channel\n</item>
@@ -204,7 +211,7 @@
     <string name="load_3_period" translatable="false">...</string>
     <string name="colon" translatable="false">:</string>
     <string name="plus" translatable="false">+</string>
-    <string name="minus" translatable="false">&#8722;</string>
+    <string name="minus" translatable="false">−</string>
 
     <string name="encountered_error_title">Playback error</string>
     <string name="encountered_error_message">VLC encountered an error with this media.\nPlease try refreshing the media library.</string>
@@ -219,6 +226,7 @@
     <string name="playback_speed_title">Save Playback Speed</string>
     <string name="playback_speed_summary">Remember the playback speed you set</string>
 
+    <string name="play_button">Play Button</string>
     <!-- Tips -->
     <string name="video_player_tips">Video player tips:</string>
     <string name="seek">Seek</string>
@@ -246,11 +254,11 @@
     <string name="revision">Revision</string>
     <string name="about">About</string>
     <string name="about_text">VLC for Android™ is a port of VLC media player, the popular open source media player. The Android™ version can read most files and network streams.</string>
-    <string name="compiled_by">This version of VLC is compiled by:</string>
-    <string name="vlc_authors">and VLC Authors.</string>
     <string name="about_link" translatable="false">        &lt;a href=&quot;https://www.videolan.org/vlc/&quot;&gt;https://www.videolan.org/vlc/&lt;/a&gt;</string>
     <string name="about_copyright" translatable="false">Copyleft &#169; 1996&#8211;2018 by VideoLAN.\n</string>
-    <string name="authors" translatable="false">Edward&#160;Wang, Sébastien&#160;Toque, Adrien&#160;Maglo, Jean-Baptiste&#160;Kempf, Ludovic&#160;Fauvet, Rafaël&#160;Carré, Alexandre&#160;Perraud, Michael&#160;Merg, Martin&#160;Storsjö, Rémi&#160;Duraffort, Dominique&#160;Martinet, Jean-Philippe&#160;André, Felix&#160;Abecassis, Christoph&#160;Miebach, Hugo&#160;Beauzée-Luyssen, Felix&#160;Paul&#160;Kühne, John&#160;Mooring, Pavol&#160;Rusnak, Rohit&#160;Yadav, Tanguy&#160;Pruvot, Thomas&#160;Clavier, Asad&#160;Mehmood, Garret&#160;Kelly, Philipp&#160;Dreimann, Walter&#160;Heck, Thomas&#160;Guillem, Geoffrey&#160;Métais.</string>
+    <string name="authors" translatable="false">Edward&#160;Wang, Sébastien&#160;Toque, Adrien&#160;Maglo, Jean-Baptiste&#160;Kempf, Ludovic&#160;Fauvet, Rafaël&#160;Carré, Alexandre&#160;Perraud, Michael&#160;Merg, Martin&#160;Storsjö, Rémi&#160;Duraffort, Dominique&#160;Martinet, Jean-Philippe&#160;André, Felix&#160;Abecassis, Christoph&#160;Miebach, Hugo&#160;Beauzée-Luyssen, Felix&#160;Paul&#160;Kühne, John&#160;Mooring, Pavol&#160;Rusnak, Rohit&#160;Yadav, Tanguy&#160;Pruvot, Thomas&#160;Clavier, Asad&#160;Mehmood, Garret&#160;Kelly, Philipp&#160;Dreimann, Walter&#160;Heck, Thomas&#160;Guillem, Geoffrey&#160;Métais, Habib&#160;Kazemi</string>
+    <string name="vlc_authors">and VLC Authors.</string>
+    <string name="compiled_by">This version of VLC is compiled by:</string>
 
     <!-- Preferences -->
     <string name="preferences">Settings</string>
@@ -267,10 +275,10 @@
     <string name="hardware_acceleration_full">Full acceleration</string>
     <string name="dev_hardware_decoder">Advanced hardware decoder</string>
     <string name="dev_hardware_decoder_summary">Force hardware decoder, for advanced users only</string>
-    <string name="dev_hardware_decoder_omx">iomx</string>
-    <string name="dev_hardware_decoder_omx_dr">iomx-dr</string>
-    <string name="dev_hardware_decoder_mediacodec">mediacodec</string>
-    <string name="dev_hardware_decoder_mediacodec_dr">mediacodec-dr</string>
+    <string name="dev_hardware_decoder_omx" translatable="false">iomx</string>
+    <string name="dev_hardware_decoder_omx_dr" translatable="false">iomx-dr</string>
+    <string name="dev_hardware_decoder_mediacodec" translatable="false">mediacodec</string>
+    <string name="dev_hardware_decoder_mediacodec_dr" translatable="false">mediacodec-dr</string>
     <string name="automatic">Automatic</string>
     <string name="screen_orientation">Video screen orientation</string>
     <string name="screen_orientation_sensor">Automatic (sensor)</string>
@@ -299,11 +307,14 @@
     <string name="video_min_group_length_title">Group videos</string>
     <string name="video_min_group_length_summary">Videos are grouped if their first letters are the same.</string>
     <string name="video_min_group_length_disable">Disable</string>
+    <string name="video_min_group_length_folder">Group by folder</string>
     <string name="video_min_group_length_first">First letter only</string>
     <string name="video_min_group_length_short">Short number of letters (6)</string>
     <string name="video_min_group_length_long">Long number of letters (9)</string>
     <string name="media_fast_seek">Fast seek</string>
     <string name="media_fast_seek_summary">Seeking in a media is faster but less accurate</string>
+    <string name="video_transition_title">Videos transition</string>
+    <string name="video_transition_summary">Show new video title on transition</string>
     <string name="media_seen">Show seen video marker</string>
     <string name="media_seen_summary">Mark a video as seen when you play it until the end</string>
     <string name="force_list_portrait">No grid in portrait mode</string>
@@ -431,8 +442,15 @@
     <string name="network_caching_summary">The amount of time to buffer network media (in ms). Does not work with hardware decoding. Leave blank to reset.</string>
     <string name="resume_playback_title">Resume playback after a call</string>
     <string name="resume_playback_summary">Stay in pause otherwise</string>
+    <string name="blurred_cover_background_title">Blurred cover background</string>
+    <string name="blurred_cover_background_summary">Blurred cover in audio player background</string>
     <string name="network_caching_popup">This value must be between 0 and 6000 ms</string>
     <string name="quit">Quit and restart application</string>
+    <string name="restart_message">Changes will take effect once application has restarted.\n\nRestart now?</string>
+    <string name="restart_message_OK">OK</string>
+    <string name="restart_message_Later">Later</string>
+    <string name="browser_show_all_title">Show all files in browser</string>
+    <string name="browser_show_all_summary">Display files that are not recognized as audio or video in browsers</string>
 
     <string name="developer_prefs_category">Developer</string>
     <string name="enable_verbose_mode">Verbose</string>
@@ -456,6 +474,16 @@
     <string name="send_log">Send the log</string>
     <string name="sending_log">Sending the log…</string>
 
+    <string name="delete_sub_title">Delete subtitle</string>
+    <string name="delete_sub_message">Do you want to delete this subtitle?</string>
+    <string name="delete_sub_yes">Yes</string>
+    <string name="delete_sub_no">No</string>
+    <string name="download_subtitle_title">Download Subtitle</string>
+
+    <string name="no_result">No results found</string>
+    <string name="no_internet_connection">Check your internet connection</string>
+    <string name="some_error_occurred">Some error occurred. Please try again in a few seconds</string>
+
     <string name="drawer_open">Open navigation drawer</string>
     <string name="drawer_close">Close navigation drawer</string>
     <string name="network_browsing">Local Network</string>
@@ -476,7 +504,7 @@
     <string name="directory_hide_medialib">Hide from MediaLib</string>
     <string name="playlist_save">Save Playlist</string>
     <string name="playlist_name_hint">playlist name</string>
-    <string name="go_to_chapter">Go to chapter&#8230;</string>
+    <string name="go_to_chapter">Go to chapter…</string>
     <string name="chapter">Chapter</string>
     <string name="resume_from_position">Resume from last position</string>
     <string name="confirm_resume">Resume from last position?</string>
@@ -498,9 +526,9 @@
     <string name="music_now_playing">Now Playing</string>
 
     <!-- Widget -->
-    <string name="widget_default_text" translatable="false">VLC mini player</string>
     <string name="widget_name_w">VLC White Widget</string>
     <string name="widget_name_b">VLC Dark Widget</string>
+    <string name="widget_default_text" translatable="false">VLC mini player</string>
     <string name="allow_storage_access_title">Allow VLC to access video and audio files</string>
     <string name="allow_storage_access_description">VLC needs you to grant this permission to access the media files on this device.</string>
     <string name="allow_settings_access_ringtone_title">Allow VLC to set the ringtone</string>
@@ -602,7 +630,41 @@
     <string name="audio_digital_output_enabled">Audio Digital Output enabled</string>
     <string name="audio_digital_output_disabled">Audio Digital Output disabled</string>
     <string name="audio_digital_title">Digital audio output (passthrough)</string>
-    <string name="audio_task_removed_title">Stop playback when application is dismissed</string>
+    <string name="audio_task_cleared_title">Stop on application swipe</string>
+    <string name="audio_task_cleared_summary">Stop playback when application is dismissed</string>
     <string name="playback_rewind">Rewind</string>
     <string name="playback_forward">Fast forward</string>
+    <string name="ml_wizard_title">VLC Medialibrary selection</string>
+    <string name="ml_wizard_scan_checkbox">Scan device for media content</string>
+    <string name="ml_wizard_description">Choose whether VLC will scan your device storage to organize your media library or just use it as a simple player with an integrated browser.</string>
+    <string name="tv_my_new_videos">My new videos</string>
+    <string name="cast_option_title">Cast medias on another screen</string>
+    <string name="otg_device_title">OTG device</string>
+    <string name="browser">Browser</string>
+    <string name="ab_repeat">A-B repeat</string>
+    <string name="stop_after_this">Stop after this track</string>
+    <string name="time_category_new">New media</string>
+    <string name="time_category_current_month">This month</string>
+    <string name="time_category_current_year">This year</string>
+    <string name="time_category_last_year">Last year</string>
+    <string name="time_category_older">Older media</string>
+    <string name="rename">Rename</string>
+    <string name="rename_media">Rename %1$s</string>
+    <string name="manual_search">Manual search</string>
+    <string name="subtitle_search_name_hint">Name</string>
+    <string name="subtitle_search_episode_hint">Episode</string>
+    <string name="subtitle_search_season_hint">Season</string>
+    <string name="language_to_download">Language</string>
+    <string name="delete_the_selected">Delete selection</string>
+    <string name="download_the_selected">Download selection</string>
+    <string name="next">Next</string>
+    <string name="download">Download</string>
+    <string name="ctx_player_video_track">Select video track</string>
+    <string name="ctx_player_audio_track">Audio track</string>
+    <string name="ctx_player_subs_track">Subtitles track</string>
+    <string name="ctx_player_tracks_title">Media tracks</string>
+    <string name="ctx_pip_title">Pop-Up player</string>
+    <string name="device_dialog_title">External device inserted</string>
+    <string name="device_dialog_message">You just plugged a new storage device to your TV box, do you want to open it with VLC?</string>
+    <string name="videos_folders_title">Videos by folders</string>
 </resources>

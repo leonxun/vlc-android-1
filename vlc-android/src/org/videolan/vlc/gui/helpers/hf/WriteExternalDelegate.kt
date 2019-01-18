@@ -7,19 +7,21 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
-import android.support.v4.app.FragmentActivity
-import android.support.v4.provider.DocumentFile
-import android.support.v7.app.AlertDialog
-import android.support.v7.preference.PreferenceManager
+import androidx.fragment.app.FragmentActivity
+import androidx.documentfile.provider.DocumentFile
+import androidx.appcompat.app.AlertDialog
 import android.text.TextUtils
+import kotlinx.coroutines.launch
 import org.videolan.libvlc.util.AndroidUtil
 import org.videolan.vlc.R
-import org.videolan.vlc.VLCApplication
 import org.videolan.vlc.util.AndroidDevices
+import org.videolan.vlc.util.AppScope
 import org.videolan.vlc.util.FileUtils
+import org.videolan.vlc.util.Settings
 
 
 class WriteExternalDelegate : BaseHeadlessFragment() {
+    private var storage : String? = null
 
     @TargetApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,19 +29,18 @@ class WriteExternalDelegate : BaseHeadlessFragment() {
         showDialog()
     }
 
+    @TargetApi(Build.VERSION_CODES.O)
     private fun showDialog() {
         if (!isAdded) return
-        val builder = AlertDialog.Builder(activity!!)
+        val builder = AlertDialog.Builder(requireActivity())
         builder.setMessage(R.string.sdcard_permission_dialog_message)
                 .setTitle(R.string.sdcard_permission_dialog_title)
-                .setPositiveButton(R.string.ok, { _, _ ->
+                .setPositiveButton(R.string.ok) { _, _ ->
                     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                    arguments?.getString(KEY_STORAGE_PATH)?.let { intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse(it)) }
-                    startActivityForResult(intent, REQUEST_CODE_STORAGE_ACCES)
-                })
-                .setNeutralButton(getString(R.string.dialog_sd_wizard), { _, _ ->
-                    showHelpDialog()
-                }).create().show()
+                    storage = arguments?.getString(KEY_STORAGE_PATH)?.apply { intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse(this)) }
+                    startActivityForResult(intent, REQUEST_CODE_STORAGE_ACCESS)
+                }
+                .setNeutralButton(getString(R.string.dialog_sd_wizard)) { _, _ -> showHelpDialog() }.create().show()
     }
 
     private fun showHelpDialog() {
@@ -52,14 +53,16 @@ class WriteExternalDelegate : BaseHeadlessFragment() {
         }
     }
 
+    @TargetApi(Build.VERSION_CODES.KITKAT)
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (data !== null && requestCode == REQUEST_CODE_STORAGE_ACCES) {
+        if (data !== null && requestCode == REQUEST_CODE_STORAGE_ACCESS) {
             if (resultCode == Activity.RESULT_OK) {
                 val context = context ?: return
-                val treeUri = data.data
-                PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext()).edit()
-                        .putString("tree_uri_"+ storage, treeUri.toString()).apply()
+                val treeUri = data.data ?: return
+                Settings.getInstance(context).edit()
+                        .putString("tree_uri_$storage", treeUri.toString())
+                        .apply()
                 val treeFile = DocumentFile.fromTreeUri(context, treeUri)
                 val contentResolver = context.contentResolver
 
@@ -67,40 +70,44 @@ class WriteExternalDelegate : BaseHeadlessFragment() {
                 val persistedUriPermissions = contentResolver.persistedUriPermissions
                 for (uriPermission in persistedUriPermissions) {
                     val file = DocumentFile.fromTreeUri(context, uriPermission.uri)
-                    if (treeFile.name == file.name) {
+                    if (treeFile?.name == file?.name) {
                         contentResolver.releasePersistableUriPermission(uriPermission.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        deferredGrant.complete(false)
                         return
                     }
                 }
 
                 // else set permission
                 contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                permissions = contentResolver.persistedUriPermissions
-                executeCallback()
+                deferredGrant.complete(true)
                 return
             }
         }
-        callback = null
+        deferredGrant.complete(false)
     }
 
     companion object {
         internal const val TAG = "VLC/WriteExternal"
         internal const val KEY_STORAGE_PATH = "VLC/storage_path"
-        private const val REQUEST_CODE_STORAGE_ACCES = 42
-        private var permissions = VLCApplication.getAppContext().contentResolver.persistedUriPermissions
-        private lateinit var storage: String
+        private const val REQUEST_CODE_STORAGE_ACCESS = 42
 
         fun askForExtWrite(activity: FragmentActivity?, uri: Uri, cb: Runnable? = null) {
-            if (activity === null) return
+            AppScope.launch {
+                if (getExtWritePermission(activity, uri)) cb?.run()
+            }
+        }
+
+        suspend fun getExtWritePermission(activity: FragmentActivity?, uri: Uri) : Boolean {
+            if (activity === null) return false
+            val storage = FileUtils.getMediaStorage(uri) ?: return false
             val fragment = WriteExternalDelegate()
-            callback = cb
-            storage = FileUtils.getMediaStorage(uri) ?: return
             fragment.arguments = Bundle(1).apply { putString(KEY_STORAGE_PATH, storage) }
             activity.supportFragmentManager.beginTransaction().add(fragment, TAG).commitAllowingStateLoss()
+            return fragment.awaitGrant()
         }
 
         fun needsWritePermission(uri: Uri) : Boolean {
-            val path = uri.path
+            val path = uri.path ?: return false
             return AndroidUtil.isLolliPopOrLater && "file" == uri.scheme
                     && !TextUtils.isEmpty(path) && path.startsWith('/')
                     && !path.startsWith(AndroidDevices.EXTERNAL_PUBLIC_DIRECTORY)

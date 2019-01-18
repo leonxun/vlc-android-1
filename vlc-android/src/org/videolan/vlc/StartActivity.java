@@ -28,59 +28,66 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
 import android.provider.MediaStore;
-import android.support.v4.app.FragmentActivity;
+import android.text.TextUtils;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.vlc.gui.MainActivity;
 import org.videolan.vlc.gui.SearchActivity;
-import org.videolan.vlc.gui.helpers.hf.StoragePermissionsDelegate;
+import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.gui.tv.MainTvActivity;
 import org.videolan.vlc.gui.video.VideoPlayerActivity;
 import org.videolan.vlc.media.MediaUtils;
 import org.videolan.vlc.util.AndroidDevices;
 import org.videolan.vlc.util.Constants;
-import org.videolan.vlc.util.Permissions;
-import org.videolan.vlc.util.Util;
+import org.videolan.vlc.util.FileUtils;
+import org.videolan.vlc.util.Settings;
+import org.videolan.vlc.util.WorkersKt;
 
-public class StartActivity extends FragmentActivity implements StoragePermissionsDelegate.CustomActionController {
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentActivity;
+import videolan.org.commontools.TvChannelUtilsKt;
+
+public class StartActivity extends FragmentActivity {
 
     public final static String TAG = "VLC/StartActivity";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (AndroidUtil.isNougatOrLater)
+            UiTools.setLocale(this);
         final Intent intent = getIntent();
-        final boolean tv =  showTvUi();
         final String action = intent != null ? intent.getAction(): null;
 
         if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null
-                && Permissions.checkReadStoragePermission(this, true)) {
-                startPlaybackFromApp(intent);
-                return;
+                && !TvChannelUtilsKt.TV_CHANNEL_SCHEME.equals(intent.getData().getScheme())) {
+            startPlaybackFromApp(intent);
+            return;
         } else if (Intent.ACTION_SEND.equals(action)) {
             final ClipData cd = intent.getClipData();
             final ClipData.Item item = cd != null && cd.getItemCount() > 0 ? cd.getItemAt(0) : null;
-            final String mrl = item != null ? item.getText().toString() : null;
-            if (mrl != null) {
-                MediaUtils.openMediaNoUi(Uri.parse(mrl));
-                finish();
-                return;
+            if (item != null) {
+                Uri uri = item.getUri();
+                if (uri == null && item.getText() != null) uri = Uri.parse(item.getText().toString());
+                if (uri != null) {
+                    MediaUtils.INSTANCE.openMediaNoUi(uri);
+                    finish();
+                    return;
+                }
             }
         }
 
         // Start application
         /* Get the current version from package */
-        final SharedPreferences settings = PreferenceManager.getDefaultSharedPreferences(this);
+        final SharedPreferences settings = Settings.INSTANCE.getInstance(this);
         final int currentVersionNumber = BuildConfig.VERSION_CODE;
         final int savedVersionNumber = settings.getInt(Constants.PREF_FIRST_RUN, -1);
         /* Check if it's the first run */
         final boolean firstRun = savedVersionNumber == -1;
         final boolean upgrade = firstRun || savedVersionNumber != currentVersionNumber;
-        if (upgrade)
-            settings.edit().putInt(Constants.PREF_FIRST_RUN, currentVersionNumber).apply();
-        startMedialibrary(firstRun, upgrade);
+        if (upgrade) settings.edit().putInt(Constants.PREF_FIRST_RUN, currentVersionNumber).apply();
+        final boolean tv = showTvUi();
         // Route search query
         if (Intent.ACTION_SEARCH.equals(action) || "com.google.android.gms.actions.SEARCH_ACTION".equals(action)) {
             startActivity(intent.setClass(this, tv ? org.videolan.vlc.gui.tv.SearchActivity.class : SearchActivity.class));
@@ -89,37 +96,76 @@ public class StartActivity extends FragmentActivity implements StoragePermission
         } else if (MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH.equals(action)) {
             final Intent serviceInent = new Intent(Constants.ACTION_PLAY_FROM_SEARCH, null, this, PlaybackService.class)
                     .putExtra(Constants.EXTRA_SEARCH_BUNDLE, intent.getExtras());
-            Util.startService(this, serviceInent);
+            ContextCompat.startForegroundService(this, serviceInent);
+        } else if(Intent.ACTION_VIEW.equals(action) && intent.getData() != null) { //launch from TV Channel
+            final Uri data = intent.getData();
+            final String path = data.getPath();
+            if (TextUtils.equals(path,"/"+TvChannelUtilsKt.TV_CHANNEL_PATH_APP)) startApplication(tv, firstRun, upgrade, 0);
+            else if (TextUtils.equals(path,"/"+TvChannelUtilsKt.TV_CHANNEL_PATH_VIDEO)) {
+                final long id = Long.valueOf(data.getQueryParameter(TvChannelUtilsKt.TV_CHANNEL_QUERY_VIDEO_ID));
+                MediaUtils.INSTANCE.openMediaNoUi(this, id);
+            }
         } else {
-            startActivity(new Intent(this, tv ? MainTvActivity.class : MainActivity.class)
-                    .putExtra(Constants.EXTRA_FIRST_RUN, firstRun)
-                    .putExtra(Constants.EXTRA_UPGRADE, upgrade));
+            final int target = getIdFromShortcut();
+            if (target == R.id.ml_menu_last_playlist) PlaybackService.Companion.loadLastAudio(this);
+            else startApplication(tv, firstRun, upgrade, target);
         }
+        FileUtils.copyLua(getApplicationContext(), upgrade);
+        if (AndroidDevices.watchDevices) StoragesMonitorKt.enableStorageMonitoring(this);
         finish();
+    }
+
+    private void startApplication(final boolean tv, final boolean firstRun, final boolean upgrade, final int target) {
+        // Start Medialibrary from background to workaround Dispatchers.Main causing ANR
+        // cf https://github.com/Kotlin/kotlinx.coroutines/issues/878
+        WorkersKt.runBackground(new Runnable() {
+            @Override
+            public void run() {
+                MediaParsingServiceKt.startMedialibrary(StartActivity.this, firstRun, upgrade, true);
+            }
+        });
+        final Intent intent = new Intent(StartActivity.this, tv ? MainTvActivity.class : MainActivity.class)
+                .putExtra(Constants.EXTRA_FIRST_RUN, firstRun)
+                .putExtra(Constants.EXTRA_UPGRADE, upgrade);
+        if (tv && getIntent().hasExtra(Constants.EXTRA_PATH)) intent.putExtra(Constants.EXTRA_PATH, getIntent().getStringExtra(Constants.EXTRA_PATH));
+        if (target != 0) intent.putExtra(Constants.EXTRA_TARGET, target);
+        startActivity(intent);
     }
 
     private void startPlaybackFromApp(Intent intent) {
         if (intent.getType() != null && intent.getType().startsWith("video"))
             startActivity(intent.setClass(this, VideoPlayerActivity.class));
-        else
-            MediaUtils.openMediaNoUi(intent.getData());
+        else MediaUtils.INSTANCE.openMediaNoUi(intent.getData());
         finish();
     }
 
-    private void startMedialibrary(final boolean firstRun, final boolean upgrade) {
-        if (!VLCApplication.getMLInstance().isInitiated() && Permissions.canReadStorage(StartActivity.this))
-            startService(new Intent(Constants.ACTION_INIT, null, StartActivity.this, MediaParsingService.class)
-                    .putExtra(Constants.EXTRA_FIRST_RUN, firstRun)
-                    .putExtra(Constants.EXTRA_UPGRADE, upgrade));
-    }
-
     private boolean showTvUi() {
-        return AndroidUtil.isJellyBeanMR1OrLater && (AndroidDevices.isAndroidTv || (!AndroidDevices.isChromeBook && !AndroidDevices.hasTsp) ||
-                PreferenceManager.getDefaultSharedPreferences(this).getBoolean("tv_ui", false));
+        return AndroidDevices.isAndroidTv || (!AndroidDevices.isChromeBook && !AndroidDevices.hasTsp) ||
+                Settings.INSTANCE.getInstance(this).getBoolean("tv_ui", false);
     }
 
-    @Override
-    public void onStorageAccessGranted() {
-        startPlaybackFromApp(getIntent());
+    private int getIdFromShortcut() {
+        if (!AndroidUtil.isNougatMR1OrLater) return 0;
+        final Intent intent = getIntent();
+        final String action = intent != null ? intent.getAction() : null;
+        if (!TextUtils.isEmpty(action)) {
+            switch (action) {
+                case "vlc.shortcut.video":
+                    return R.id.nav_video;
+                case "vlc.shortcut.audio":
+                    return R.id.nav_audio;
+                case "vlc.shortcut.browser":
+                    return R.id.nav_directories;
+                case "vlc.shortcut.network":
+                    return R.id.nav_network;
+                case "vlc.shortcut.playlists":
+                    return R.id.nav_playlists;
+                case "vlc.shortcut.resume":
+                    return R.id.ml_menu_last_playlist;
+                default:
+                    return 0;
+            }
+        }
+        return 0;
     }
 }

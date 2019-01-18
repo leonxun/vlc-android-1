@@ -45,15 +45,16 @@ public abstract class AudioMediaSwitcher extends FlingViewGroup {
     }
 
     public void updateMedia(final PlaybackService service) {
+        if (service == null) return;
         final String artMrl = service.getCoverArt();
         final String prevArtMrl = service.getPrevCoverArt();
         final String nextArtMrl = service.getNextCoverArt();
-        WorkersKt.runBackground(new Runnable() {
+        WorkersKt.runIO(new Runnable() {
             @Override
             public void run() {
-                final Bitmap coverCurrent = AudioUtil.readCoverBitmap(Uri.decode(artMrl), 512);
-                final Bitmap coverPrev = AudioUtil.readCoverBitmap(Uri.decode(prevArtMrl), 512);
-                final Bitmap coverNext = AudioUtil.readCoverBitmap(Uri.decode(nextArtMrl), 512);
+                final Bitmap coverCurrent = artMrl != null ? AudioUtil.readCoverBitmap(Uri.decode(artMrl), 512) : null;
+                final Bitmap coverPrev = prevArtMrl != null ? AudioUtil.readCoverBitmap(Uri.decode(prevArtMrl), 512) : null;
+                final Bitmap coverNext = nextArtMrl != null ? AudioUtil.readCoverBitmap(Uri.decode(nextArtMrl), 512) : null;
                 WorkersKt.runOnMainThread(new Runnable() {
                     @Override
                     public void run() {
@@ -147,10 +148,10 @@ public abstract class AudioMediaSwitcher extends FlingViewGroup {
         mAudioMediaSwitcherListener = l;
     }
 
-    public static interface AudioMediaSwitcherListener {
-        public final static int PREVIOUS_MEDIA = 1;
-        public final static int CURRENT_MEDIA = 2;
-        public final static int NEXT_MEDIA = 3;
+    public interface AudioMediaSwitcherListener {
+        int PREVIOUS_MEDIA = 1;
+        int CURRENT_MEDIA = 2;
+        int NEXT_MEDIA = 3;
 
         void onMediaSwitching();
 

@@ -24,12 +24,12 @@ import android.annotation.TargetApi;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import org.videolan.vlc.ExternalMonitor;
 import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.gui.tv.MainTvActivity;
@@ -38,6 +38,10 @@ import org.videolan.vlc.gui.tv.browser.interfaces.BrowserFragmentInterface;
 import org.videolan.vlc.gui.tv.browser.interfaces.DetailsFragment;
 import org.videolan.vlc.interfaces.Sortable;
 import org.videolan.vlc.util.Constants;
+
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.lifecycle.Observer;
 
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 public class VerticalGridActivity extends BaseTvActivity implements BrowserActivityInterface {
@@ -95,6 +99,12 @@ public class VerticalGridActivity extends BaseTvActivity implements BrowserActiv
                     .add(R.id.tv_fragment_placeholder, ((Fragment)mFragment))
                     .commit();
         }
+        ExternalMonitor.INSTANCE.getConnected().observe(this, new Observer<Boolean>() {
+            @Override
+            public void onChanged(@Nullable Boolean connected) {
+                onNetworkConnectionChanged(connected);
+            }
+        });
     }
 
     @Override
@@ -102,11 +112,11 @@ public class VerticalGridActivity extends BaseTvActivity implements BrowserActiv
         mFragment.refresh();
     }
 
-    @Override
     public void onNetworkConnectionChanged(boolean connected) {
         if (mFragment instanceof NetworkBrowserFragment) refresh();
     }
 
+    @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if ((mFragment instanceof DetailsFragment)
                 && (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_BUTTON_Y || keyCode == KeyEvent.KEYCODE_Y)) {
@@ -116,6 +126,7 @@ public class VerticalGridActivity extends BaseTvActivity implements BrowserActiv
         return super.onKeyDown(keyCode, event);
     }
 
+    @Override
     public void showProgress(final boolean show){
         runOnUiThread(new Runnable() {
             @Override

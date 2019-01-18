@@ -30,8 +30,6 @@ import android.graphics.BitmapFactory;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.provider.MediaStore;
-import android.support.annotation.WorkerThread;
-import android.support.v4.app.FragmentActivity;
 import android.text.TextUtils;
 import android.util.Log;
 import android.widget.Toast;
@@ -47,6 +45,7 @@ import org.videolan.vlc.util.HttpImageLoader;
 import org.videolan.vlc.util.MurmurHash;
 import org.videolan.vlc.util.Permissions;
 import org.videolan.vlc.util.Util;
+import org.videolan.vlc.util.WorkersKt;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -62,6 +61,9 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+
+import androidx.annotation.WorkerThread;
+import androidx.fragment.app.FragmentActivity;
 
 public class AudioUtil {
     public final static String TAG = "VLC/AudioUtil";
@@ -83,51 +85,73 @@ public class AudioUtil {
 //     */
 //    public static AtomicReference<String> PLAYLIST_DIR = new AtomicReference<>();
 
-    public static void setRingtone(MediaWrapper song, FragmentActivity context){
+    public static void setRingtone(final MediaWrapper song, final FragmentActivity context){
+        if (AndroidUtil.isOOrLater && !Permissions.canWriteStorage(context)) {
+            Permissions.askWriteStoragePermission(context, false, new Runnable() {
+                @Override
+                public void run() {
+                    setRingtone(song, context);
+                }
+            });
+            return;
+        }
         if (!Permissions.canWriteSettings(context)) {
             Permissions.checkWriteSettingsPermission(context, Permissions.PERMISSION_SYSTEM_RINGTONE);
             return;
         }
-        File newringtone = AndroidUtil.UriToFile(song.getUri());
-        if(newringtone == null || !newringtone.exists()) {
-            Toast.makeText(context.getApplicationContext(),context.getString(R.string.ringtone_error), Toast.LENGTH_SHORT).show();
-            return;
-        }
+        WorkersKt.runIO(new Runnable() {
+            @Override
+            public void run() {
+                final File newRingtone = AndroidUtil.UriToFile(song.getUri());
+                if (!newRingtone.exists()) {
+                    Toast.makeText(context.getApplicationContext(),context.getString(R.string.ringtone_error), Toast.LENGTH_SHORT).show();
+                    return;
+                }
 
-        ContentValues values = new ContentValues();
-        values.put(MediaStore.MediaColumns.DATA, newringtone.getAbsolutePath());
-        values.put(MediaStore.MediaColumns.TITLE, song.getTitle());
-        values.put(MediaStore.MediaColumns.MIME_TYPE, "audio/*");
-        values.put(MediaStore.Audio.Media.ARTIST, song.getArtist());
-        values.put(MediaStore.Audio.Media.IS_RINGTONE, true);
-        values.put(MediaStore.Audio.Media.IS_NOTIFICATION, false);
-        values.put(MediaStore.Audio.Media.IS_ALARM, false);
-        values.put(MediaStore.Audio.Media.IS_MUSIC, false);
+                final ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DATA, newRingtone.getAbsolutePath());
+                values.put(MediaStore.MediaColumns.TITLE, song.getTitle());
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "audio/*");
+                values.put(MediaStore.Audio.Media.ARTIST, song.getArtist());
+                values.put(MediaStore.Audio.Media.IS_RINGTONE, true);
+                values.put(MediaStore.Audio.Media.IS_NOTIFICATION, false);
+                values.put(MediaStore.Audio.Media.IS_ALARM, false);
+                values.put(MediaStore.Audio.Media.IS_MUSIC, false);
 
-        Uri uri = MediaStore.Audio.Media.getContentUriForPath(newringtone.getAbsolutePath());
-        Uri newUri;
-        try {
-            context.getContentResolver().delete(uri, MediaStore.MediaColumns.DATA + "=\"" + newringtone.getAbsolutePath() + "\"", null);
-            newUri = context.getContentResolver().insert(uri, values);
-            RingtoneManager.setActualDefaultRingtoneUri(
-                    context.getApplicationContext(),
-                    RingtoneManager.TYPE_RINGTONE,
-                    newUri
-            );
-        } catch(Exception e) {
-            Log.e(TAG, "error setting ringtone", e);
-            Toast.makeText(context.getApplicationContext(),
-                    context.getString(R.string.ringtone_error),
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        Toast.makeText(
-                context.getApplicationContext(),
-                context.getString(R.string.ringtone_set, song.getTitle()),
-                Toast.LENGTH_SHORT)
-                .show();
-
+                final Uri uri = MediaStore.Audio.Media.getContentUriForPath(newRingtone.getAbsolutePath());
+                final Uri newUri;
+                try {
+                    context.getContentResolver().delete(uri, MediaStore.MediaColumns.DATA + "=\"" + newRingtone.getAbsolutePath() + "\"", null);
+                    newUri = context.getContentResolver().insert(uri, values);
+                    RingtoneManager.setActualDefaultRingtoneUri(
+                            context.getApplicationContext(),
+                            RingtoneManager.TYPE_RINGTONE,
+                            newUri
+                    );
+                } catch(Exception e) {
+                    Log.e(TAG, "error setting ringtone", e);
+                    WorkersKt.runOnMainThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(context.getApplicationContext(),
+                                    context.getString(R.string.ringtone_error),
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                    return;
+                }
+                WorkersKt.runOnMainThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(
+                                context.getApplicationContext(),
+                                context.getString(R.string.ringtone_set, song.getTitle()),
+                                Toast.LENGTH_SHORT)
+                                .show();
+                    }
+                });
+            }
+        });
     }
 
     @SuppressLint("NewApi")
@@ -202,8 +226,8 @@ public class AudioUtil {
             return Uri.decode(artworkURL).replace("file://", "");
         } else if(artworkURL != null && artworkURL.startsWith("attachment://")) {
             // Decode if the album art is embedded in the file
-            String mArtist = MediaUtils.getMediaArtist(context, media);
-            String mAlbum = MediaUtils.getMediaAlbum(context, media);
+            String mArtist = MediaUtils.INSTANCE.getMediaArtist(context, media);
+            String mAlbum = MediaUtils.INSTANCE.getMediaAlbum(context, media);
 
             /* Parse decoded attachment */
             if( mArtist.length() == 0 || mAlbum.length() == 0 ||
@@ -257,6 +281,7 @@ public class AudioUtil {
             final String name = f.getName().substring(0, index);
             final String ext  = f.getName().substring(index);
             final File[] files = folder.listFiles(new FilenameFilter() {
+                @Override
                 public boolean accept(File dir, String filename) {
                     return filename.startsWith(name) && Arrays.asList(imageExt).contains(ext);
                 }
@@ -278,7 +303,7 @@ public class AudioUtil {
     }
 
     private static String getCoverCachePath(Context context, MediaWrapper media, int width) {
-        final int hash = MurmurHash.hash32(MediaUtils.getMediaArtist(context, media) + MediaUtils.getMediaAlbum(context, media));
+        final int hash = MurmurHash.hash32(MediaUtils.INSTANCE.getMediaArtist(context, media) + MediaUtils.INSTANCE.getMediaAlbum(context, media));
         return COVER_DIR.get() + (hash >= 0 ? "" + hash : "m" + (-hash)) + "_" + width;
     }
 

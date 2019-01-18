@@ -3,17 +3,17 @@ package org.videolan.vlc.gui.preferences;
 
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
-import android.support.design.widget.AppBarLayout;
-import android.support.v7.preference.CheckBoxPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.preference.SwitchPreferenceCompat;
-import android.support.v7.preference.TwoStatePreference;
+import com.google.android.material.appbar.AppBarLayout;
+import androidx.preference.CheckBoxPreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
+import androidx.preference.SwitchPreferenceCompat;
+import androidx.preference.TwoStatePreference;
 
 import org.videolan.vlc.R;
 import org.videolan.vlc.extensions.ExtensionListing;
 import org.videolan.vlc.extensions.ExtensionsManager;
+import org.videolan.vlc.util.Settings;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +33,7 @@ public class PreferencesExtensionFragment extends BasePreferenceFragment {
     @Override
     public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
-        mSettings = PreferenceManager.getDefaultSharedPreferences(getActivity().getApplication());
+        mSettings = Settings.INSTANCE.getInstance(requireActivity());
         setHasOptionsMenu(true);
         if (bundle == null)
             bundle = getArguments();

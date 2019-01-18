@@ -24,8 +24,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.media.AudioManager;
 import android.os.Build;
-import android.preference.PreferenceManager;
-import android.support.annotation.MainThread;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -35,13 +33,15 @@ import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.libvlc.util.HWDecoderUtil;
 import org.videolan.libvlc.util.VLCUtil;
 import org.videolan.medialibrary.media.MediaWrapper;
+import org.videolan.vlc.PlaybackService;
 import org.videolan.vlc.R;
-import org.videolan.vlc.RendererDelegate;
 import org.videolan.vlc.VLCApplication;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+
+import androidx.annotation.MainThread;
 
 
 public class VLCOptions {
@@ -61,7 +61,7 @@ public class VLCOptions {
     // TODO should return List<String>
     public static ArrayList<String> getLibOptions() {
         final Context context = VLCApplication.getAppContext();
-        final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+        final SharedPreferences pref = Settings.INSTANCE.getInstance(context);
 
         /* generate an audio session id so as to share audio output with external equalizer */
         if (Build.VERSION.SDK_INT >= 21 && AUDIOTRACK_SESSION_ID == 0) {
@@ -76,8 +76,6 @@ public class VLCOptions {
         final String subtitlesEncoding = pref.getString("subtitle_text_encoding", "");
         final boolean frameSkip = pref.getBoolean("enable_frame_skip", false);
         String chroma = pref.getString("chroma_format", VLCApplication.getAppResources().getString(R.string.chroma_format_default));
-        if (chroma.equals("YV12"))
-            chroma = "";
         final boolean verboseMode = pref.getBoolean("enable_verbose_mode", true);
 
         int deblocking = -1;
@@ -213,9 +211,10 @@ public class VLCOptions {
     public static void setMediaOptions(Media media, Context context, int flags) {
         boolean noHardwareAcceleration = (flags & MediaWrapper.MEDIA_NO_HWACCEL) != 0;
         boolean noVideo = (flags & MediaWrapper.MEDIA_VIDEO) == 0;
+        boolean benchmark = (flags & MediaWrapper.MEDIA_BENCHMARK) != 0;
         final boolean paused = (flags & MediaWrapper.MEDIA_PAUSED) != 0;
         int hardwareAcceleration = HW_ACCELERATION_DISABLED;
-        final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        final SharedPreferences prefs = Settings.INSTANCE.getInstance(context);
 
         if (!noHardwareAcceleration) {
             try {
@@ -235,9 +234,9 @@ public class VLCOptions {
         if (noVideo) media.addOption(":no-video");
         if (paused) media.addOption(":start-paused");
         if (!prefs.getBoolean("subtitles_autoload", true)) media.addOption(":sub-language=none");
-        if (prefs.getBoolean("media_fast_seek", true)) media.addOption(":input-fast-seek");
+        if (!benchmark && prefs.getBoolean("media_fast_seek", true)) media.addOption(":input-fast-seek");
 
-        if (RendererDelegate.INSTANCE.hasRenderer()) {
+        if (PlaybackService.Companion.hasRenderer()) {
             media.addOption(":sout-chromecast-audio-passthrough="+prefs.getBoolean("casting_passthrough", true));
             media.addOption(":sout-chromecast-conversion-quality="+prefs.getString("casting_quality", "2"));
         }
@@ -261,7 +260,7 @@ public class VLCOptions {
 
     @MainThread
     public static MediaPlayer.Equalizer getEqualizerSetFromSettings(Context context, boolean force) {
-        final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+        final SharedPreferences pref = Settings.INSTANCE.getInstance(context);
         if (!force && !pref.getBoolean("equalizer_enabled", false))
             return null;
         return getEqualizerSetFromSettings(pref);
@@ -274,13 +273,13 @@ public class VLCOptions {
 
     @MainThread
     public static String getEqualizerNameFromSettings(Context context) {
-        final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+        final SharedPreferences pref = Settings.INSTANCE.getInstance(context);
         return pref.getString("equalizer_set", "Flat");
     }
 
     @MainThread
     public static void saveEqualizerInSettings(Context context, MediaPlayer.Equalizer eq, String name, boolean enabled, boolean saved) {
-        final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+        final SharedPreferences pref = Settings.INSTANCE.getInstance(context);
         SharedPreferences.Editor editor = pref.edit();
         if (eq != null) {
             editor.putBoolean("equalizer_enabled", enabled);
@@ -302,7 +301,7 @@ public class VLCOptions {
     @MainThread
     public static MediaPlayer.Equalizer getCustomSet(Context context, String customName) {
         try {
-            final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
+            final SharedPreferences pref = Settings.INSTANCE.getInstance(context);
             String key = "custom_equalizer_" + customName.replace(" ", "_");
             final float[] bands = Preferences.getFloatArray(pref, key);
             final int bandCount = MediaPlayer.Equalizer.getBandCount();
@@ -321,10 +320,10 @@ public class VLCOptions {
 
     @MainThread
     public static void saveCustomSet(Context context, MediaPlayer.Equalizer eq, String customName) {
-        final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
-        String formatedName = customName.replace(" ", "_");
-        String key = "custom_equalizer_" + formatedName;
-        SharedPreferences.Editor editor = pref.edit();
+        final SharedPreferences pref = Settings.INSTANCE.getInstance(context);
+        final String formatedName = customName.replace(" ", "_");
+        final String key = "custom_equalizer_" + formatedName;
+        final SharedPreferences.Editor editor = pref.edit();
         final int bandCount = MediaPlayer.Equalizer.getBandCount();
         final float[] bands = new float[bandCount + 1];
         bands[0] = eq.getPreAmp();
@@ -337,20 +336,18 @@ public class VLCOptions {
 
     @MainThread
     public static void deleteCustomSet(Context context, String customName) {
-        PreferenceManager.getDefaultSharedPreferences(context)
+        Settings.INSTANCE.getInstance(context)
                 .edit()
                 .remove("custom_equalizer_" + customName.replace(" ", "_"))
                 .apply();
     }
 
     public static boolean getEqualizerSavedState (Context context){
-        return PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean("equalizer_saved", true);
+        return Settings.INSTANCE.getInstance(context).getBoolean("equalizer_saved", true);
     }
 
     public static boolean getEqualizerEnabledState (Context context){
-        return PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean("equalizer_enabled", false);
+        return Settings.INSTANCE.getInstance(context).getBoolean("equalizer_enabled", false);
     }
 
     public static int getAudiotrackSessionId() {

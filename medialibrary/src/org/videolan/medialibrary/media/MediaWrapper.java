@@ -24,7 +24,6 @@ import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.support.annotation.Nullable;
 import android.text.TextUtils;
 
 import org.videolan.libvlc.Media;
@@ -38,6 +37,9 @@ import org.videolan.medialibrary.Tools;
 
 import java.util.Locale;
 
+import androidx.annotation.Nullable;
+
+@SuppressWarnings("JniMissingFunction")
 public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     public final static String TAG = "VLC/MediaWrapper";
 
@@ -54,6 +56,8 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     public final static int MEDIA_NO_HWACCEL = 0x02;
     public final static int MEDIA_PAUSED = 0x4;
     public final static int MEDIA_FORCE_AUDIO = 0x8;
+    public final static int MEDIA_BENCHMARK = 0x10;
+    public final static int MEDIA_FROM_START = 0x20;
 
     //MetaData flags
     public final static int META_RATING = 1;
@@ -83,6 +87,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
 
     // threshold lentgh between song and podcast ep, set to 15 minutes
     private static final long PODCAST_THRESHOLD = 900000L;
+    private static final long PODCAST_ABSOLUTE = 3600000L;
 
     protected String mDisplayTitle;
     private String mArtist;
@@ -105,6 +110,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     private final Uri mUri;
     private String mFilename;
     private long mTime = 0;
+    private long mDisplayTime = 0;
     /* -1 is a valid track (Disabled) */
     private int mAudioTrack = -2;
     private int mSpuTrack = -2;
@@ -125,8 +131,8 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
      * @param mrl Should not be null.
      */
     public MediaWrapper(long id, String mrl, long time, long length, int type, String title,
-                        String artist, String genre, String album, String albumArtist, int width,
-                        int height, String artworkURL, int audio, int spu, int trackNumber,
+                        String filename, String artist, String genre, String album, String albumArtist,
+                        int width, int height, String artworkURL, int audio, int spu, int trackNumber,
                         int discNumber, long lastModified, long seen, boolean isThumbnailGenerated) {
         super();
         if (TextUtils.isEmpty(mrl)) throw new IllegalArgumentException("uri was empty");
@@ -135,6 +141,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
             mrl = "file://"+mrl;
         mUri = Uri.parse(mrl);
         mId = id;
+        mFilename = filename;
         init(time, length, type, null, title, artist, genre, album, albumArtist, width, height,
                 artworkURL != null ? VLCUtil.UriFromMrl(artworkURL).getPath() : null, audio, spu,
                 trackNumber, discNumber, lastModified, seen, null);
@@ -273,6 +280,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
                       long seen, Media.Slave[] slaves) {
         mFilename = null;
         mTime = time;
+        mDisplayTime = time;
         mAudioTrack = audio;
         mSpuTrack = spu;
         mLength = length;
@@ -308,10 +316,16 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     }
 
     @Override
+    public int getTracksCount() {
+        return 1;
+    }
+
+    @Override
     public int getItemType() {
         return TYPE_MEDIA;
     }
 
+    @Override
     public long getId() {
         return mId;
     }
@@ -376,6 +390,14 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
         mTime = time;
     }
 
+    public long getDisplayTime() {
+        return mDisplayTime;
+    }
+
+    public void setDisplayTime(long time) {
+        mDisplayTime = time;
+    }
+
     public int getAudioTrack() {
         return mAudioTrack;
     }
@@ -405,10 +427,13 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     }
 
     public boolean isPodcast() {
-        return mType == TYPE_AUDIO && (TextUtils.isEmpty(mAlbum) && mLength > PODCAST_THRESHOLD
+        return mType == TYPE_AUDIO && (mLength > PODCAST_ABSOLUTE
+                || TextUtils.isEmpty(mAlbum) && mLength > PODCAST_THRESHOLD
                 || "podcast".equalsIgnoreCase(mGenre)
                 || "audiobooks".equalsIgnoreCase(mGenre)
-                || "audiobook".equalsIgnoreCase(mGenre));
+                || "audiobook".equalsIgnoreCase(mGenre)
+                || "speech".equalsIgnoreCase(mGenre)
+                || "vocal".equalsIgnoreCase(mGenre));
     }
 
     public void setType(int type){
@@ -454,14 +479,21 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
         mDisplayTitle = title;
     }
 
+    @Override
     public void setTitle(String title){
         mTitle = title;
+    }
+
+    public void rename(String name) {
+        final Medialibrary ml = Medialibrary.getInstance();
+        if (mId != 0 && ml.isInitiated()) nativeSetMediaTitle(ml, mId, name);
     }
 
     public void setArtist(String artist){
         mArtist = artist;
     }
 
+    @Override
     public String getTitle() {
         if (!TextUtils.isEmpty(mDisplayTitle))
             return mDisplayTitle;
@@ -557,6 +589,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
         return mThumbnailGenerated;
     }
 
+    @Override
     public String getArtworkMrl() {
         return mArtworkURL;
     }
@@ -631,6 +664,7 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     private native void nativeSetMediaStringMetadata(Medialibrary ml, long id, int metaDataType, String metadataValue);
     private native void nativeSetMediaLongMetadata(Medialibrary ml, long id, int metaDataType, long metadataValue);
     private native void nativeSetMediaThumbnail(Medialibrary ml, long id, String mrl);
+    private native void nativeSetMediaTitle(Medialibrary ml, long id, String name);
 
     @Nullable
     public Media.Slave[] getSlaves() {
@@ -701,9 +735,11 @@ public class MediaWrapper extends MediaLibraryItem implements Parcelable {
     }
 
     public static final Parcelable.Creator<MediaWrapper> CREATOR = new Parcelable.Creator<MediaWrapper>() {
+        @Override
         public MediaWrapper createFromParcel(Parcel in) {
             return new MediaWrapper(in);
         }
+        @Override
         public MediaWrapper[] newArray(int size) {
             return new MediaWrapper[size];
         }

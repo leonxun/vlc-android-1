@@ -25,9 +25,9 @@ package org.videolan.vlc.gui.preferences;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.support.v7.preference.CheckBoxPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.TwoStatePreference;
+import androidx.preference.CheckBoxPreference;
+import androidx.preference.Preference;
+import androidx.preference.TwoStatePreference;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.libvlc.util.HWDecoderUtil;
@@ -83,7 +83,7 @@ public class PreferencesAudio extends BasePreferenceFragment implements SharedPr
         if (preference.getKey() == null) return false;
         switch (preference.getKey()){
             case "enable_headset_detection":
-                ((PreferencesActivity)getActivity()).detectHeadset(((TwoStatePreference) preference).isChecked());
+                ((PreferencesActivity)requireActivity()).detectHeadset(((TwoStatePreference) preference).isChecked());
                 return true;
         }
         return super.onPreferenceTreeClick(preference);

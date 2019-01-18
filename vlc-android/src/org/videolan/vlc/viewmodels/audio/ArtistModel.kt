@@ -20,24 +20,21 @@
 
 package org.videolan.vlc.viewmodels.audio
 
-import android.arch.lifecycle.ViewModel
-import android.arch.lifecycle.ViewModelProvider
-import kotlinx.coroutines.experimental.withContext
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.videolan.medialibrary.Medialibrary
-import org.videolan.medialibrary.Medialibrary.ArtistsAddedCb
 import org.videolan.medialibrary.media.MediaLibraryItem
-import org.videolan.vlc.VLCApplication
-import org.videolan.vlc.util.VLCIO
+import org.videolan.vlc.util.EmptyMLCallbacks
+import org.videolan.vlc.util.Settings
 
-class ArtistModel(private var showAll: Boolean = false): AudioModel(), ArtistsAddedCb {
+class ArtistModel(context: Context, private var showAll: Boolean = false): AudioModel(context), Medialibrary.ArtistsCb by EmptyMLCallbacks {
 
     init {
-        sort = VLCApplication.getSettings().getInt(sortKey, Medialibrary.SORT_ALPHA)
-        desc = VLCApplication.getSettings().getBoolean("${sortKey}_desc", false)
-    }
-
-    override fun onArtistsAdded() {
-        refresh()
+        sort = Settings.getInstance(context).getInt(sortKey, Medialibrary.SORT_ALPHA)
+        desc = Settings.getInstance(context).getBoolean("${sortKey}_desc", false)
     }
 
     fun showAll(show: Boolean) {
@@ -47,25 +44,33 @@ class ArtistModel(private var showAll: Boolean = false): AudioModel(), ArtistsAd
     //VLCApplication.getSettings().getBoolean(Constants.KEY_ARTISTS_SHOW_ALL, false)
     @Suppress("UNCHECKED_CAST")
     override suspend fun updateList() {
-        dataset.value = withContext(VLCIO) {
+        dataset.value = withContext(Dispatchers.IO) {
             medialibrary.getArtists(showAll, sort, desc).toMutableList() as MutableList<MediaLibraryItem>
         }
     }
 
     override fun onMedialibraryReady() {
         super.onMedialibraryReady()
-        medialibrary.setArtistsAddedCb(this)
+        medialibrary.addArtistsCb(this)
     }
 
     override fun onCleared() {
+        medialibrary.removeArtistsCb(this)
         super.onCleared()
-        medialibrary.setArtistsAddedCb(null)
     }
 
-    class Factory(private val showAll: Boolean): ViewModelProvider.NewInstanceFactory() {
+    override fun onArtistsAdded() {
+        refresh()
+    }
+
+    override fun onArtistsDeleted() {
+        refresh()
+    }
+
+    class Factory(private val context: Context, private val showAll: Boolean): ViewModelProvider.NewInstanceFactory() {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             @Suppress("UNCHECKED_CAST")
-            return ArtistModel(showAll) as T
+            return ArtistModel(context, showAll) as T
         }
     }
 }

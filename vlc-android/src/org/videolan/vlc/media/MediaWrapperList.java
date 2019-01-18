@@ -20,8 +20,6 @@
  *****************************************************************************/
 package org.videolan.vlc.media;
 
-import android.support.annotation.Nullable;
-
 import org.videolan.medialibrary.Medialibrary;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.vlc.VLCApplication;
@@ -29,6 +27,8 @@ import org.videolan.vlc.VLCApplication;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
+
+import androidx.annotation.Nullable;
 
 public class MediaWrapperList {
     private static final String TAG = "VLC/MediaWrapperList";
@@ -146,7 +146,7 @@ public class MediaWrapperList {
         }
     }
 
-    public int size() {
+    public synchronized int size() {
         return mInternalList.size();
     }
 
@@ -172,17 +172,20 @@ public class MediaWrapperList {
         return mVideoCount == 0;
     }
 
-    public synchronized void updateWithMLMeta() {
-        final ListIterator<MediaWrapper> iter = mInternalList.listIterator();
-        final Medialibrary ml = VLCApplication.getMLInstance();
-        while (iter.hasNext()) {
-            final MediaWrapper media = iter.next();
-            if (media.getId() == 0L) {
-                final MediaWrapper mw = ml.findMedia(media);
-                if (mw.getId() != 0) iter.set(mw);
+    public void updateWithMLMeta() {
+    final ListIterator<MediaWrapper> iter = mInternalList.listIterator();
+    final Medialibrary ml = VLCApplication.getMLInstance();
+    while (iter.hasNext()) {
+        final MediaWrapper media = iter.next();
+        if (media.getId() == 0L) {
+            final MediaWrapper mw = ml.findMedia(media);
+            if (mw.getId() != 0) {
+                if (mw.getType() == MediaWrapper.TYPE_ALL) mw.setType(media.getType());
+                synchronized (this) { iter.set(mw); }
             }
         }
     }
+}
 
     @Override
     public String toString() {

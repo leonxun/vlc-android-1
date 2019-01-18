@@ -23,80 +23,52 @@
 
 package org.videolan.vlc.gui.browser;
 
-import android.app.Activity;
-import android.arch.lifecycle.Observer;
-import android.arch.lifecycle.ViewModelProviders;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentManager;
-import android.support.v4.content.LocalBroadcastManager;
-import android.support.v7.widget.LinearLayoutManager;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 
-import org.jetbrains.annotations.NotNull;
-import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
 import org.videolan.vlc.ExternalMonitor;
 import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
-import org.videolan.vlc.gui.SimpleAdapter;
 import org.videolan.vlc.gui.dialogs.NetworkServerDialog;
 import org.videolan.vlc.gui.dialogs.VlcLoginDialog;
-import org.videolan.vlc.media.MediaDatabase;
 import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.Util;
+import org.videolan.vlc.util.WorkersKt;
 import org.videolan.vlc.viewmodels.browser.NetworkModel;
 
-import java.util.List;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProviders;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-public class NetworkBrowserFragment extends BaseBrowserFragment implements SimpleAdapter.FavoritesHandler {
-
-    @Override
-    public void onClick(@NotNull MediaLibraryItem item) {
-        browse((MediaWrapper) item, true);
-    }
+public class NetworkBrowserFragment extends BaseBrowserFragment {
 
     @Override
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        getBinding().setShowFavorites(isRootDirectory());
-        viewModel = ViewModelProviders.of(this, new NetworkModel.Factory(getMrl(), getShowHiddenFiles())).get(NetworkModel.class);
+        viewModel = ViewModelProviders.of(this, new NetworkModel.Factory(requireContext(), getMrl(), getShowHiddenFiles())).get(NetworkModel.class);
     }
 
     @Override
     public void onActivityCreated(@Nullable Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
-        if (isRootDirectory()) ((NetworkModel) viewModel).getFavorites().observe(this, new Observer<List<MediaLibraryItem>>() {
-            @Override
-            public void onChanged(@Nullable List<MediaLibraryItem> mediaLibraryItems) {
-                getBinding().setShowFavorites(!Util.isListEmpty(mediaLibraryItems));
-                favoritesAdapter.update(mediaLibraryItems);
-            }
-        });
-        ExternalMonitor.connected.observe(this, new Observer<Boolean>() {
+        ExternalMonitor.INSTANCE.getConnected().observe(this, new Observer<Boolean>() {
             @Override
             public void onChanged(@Nullable Boolean connected) {
                 refresh(connected);
             }
         });
-    }
-
-    private BaseBrowserAdapter favoritesAdapter;
-    @Override
-    protected void initFavorites() {
-        if (!isRootDirectory()) return;
-        getBinding().favoritesList.setLayoutManager(new LinearLayoutManager(getActivity()));
-        favoritesAdapter = new BaseBrowserAdapter(this, true);
-        getBinding().favoritesList.setAdapter(favoritesAdapter);
     }
 
     @Override
@@ -110,14 +82,24 @@ public class NetworkBrowserFragment extends BaseBrowserFragment implements Simpl
         super.onPrepareOptionsMenu(menu);
         final MenuItem item = menu.findItem(R.id.ml_menu_save);
         item.setVisible(!isRootDirectory());
-
-        boolean isFavorite = getMrl() != null && MediaDatabase.getInstance().networkFavExists(Uri.parse(getMrl()));
-        item.setIcon(isFavorite ?
-                R.drawable.ic_menu_bookmark_w :
-                R.drawable.ic_menu_bookmark_outline_w);
-        item.setTitle(isFavorite ? R.string.favorites_remove : R.string.favorites_add);
+        WorkersKt.runIO(new Runnable() {
+            @Override
+            public void run() {
+                final boolean isFavorite = getMrl() != null && getBrowserFavRepository().browserFavExists(Uri.parse(getMrl()));
+                WorkersKt.runOnMainThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        item.setIcon(isFavorite ?
+                                R.drawable.ic_menu_bookmark_w :
+                                R.drawable.ic_menu_bookmark_outline_w);
+                        item.setTitle(isFavorite ? R.string.favorites_remove : R.string.favorites_add);
+                    }
+                });
+            }
+        });
     }
 
+    @Override
     public void onStart() {
         super.onStart();
         if (!isRootDirectory()) LocalBroadcastManager.getInstance(VLCApplication.getAppContext()).registerReceiver(mLocalReceiver, new IntentFilter(VlcLoginDialog.ACTION_DIALOG_CANCELED));
@@ -128,7 +110,7 @@ public class NetworkBrowserFragment extends BaseBrowserFragment implements Simpl
 
     @Override
     public void refresh() {
-        refresh(ExternalMonitor.connected.getValue());
+        refresh(ExternalMonitor.INSTANCE.isConnected());
     }
 
     public void refresh(boolean connected) {
@@ -136,18 +118,6 @@ public class NetworkBrowserFragment extends BaseBrowserFragment implements Simpl
         else {
             updateEmptyView();
             getAdapter().clear();
-        }
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.ml_menu_save:
-                toggleFavorite();
-                onPrepareOptionsMenu(getMenu());
-                return true;
-            default:
-                return super.onOptionsItemSelected(item);
         }
     }
 
@@ -167,18 +137,13 @@ public class NetworkBrowserFragment extends BaseBrowserFragment implements Simpl
 
     @Override
     public void onCtxAction(int position, int option) {
-        final MediaWrapper mw = (MediaWrapper) (isRootDirectory() ? favoritesAdapter.getItem(position) : getAdapter().getItem(position));
+        final MediaWrapper mw = (MediaWrapper) getAdapter().getItem(position);
         switch (option) {
-            case Constants.CTX_NETWORK_ADD:
-                MediaDatabase.getInstance().addNetworkFavItem(mw.getUri(), mw.getTitle(), mw.getArtworkURL());
-                if (isRootDirectory()) ((NetworkModel) getViewModel()).updateFavs();
+            case Constants.CTX_FAV_ADD:
+                getBrowserFavRepository().addNetworkFavItem(mw.getUri(), mw.getTitle(), mw.getArtworkURL());
                 break;
-            case Constants.CTX_NETWORK_EDIT:
+            case Constants.CTX_FAV_EDIT:
                 showAddServerDialog(mw);
-                break;
-            case Constants.CTX_NETWORK_REMOVE:
-                MediaDatabase.getInstance().deleteNetworkFav(mw.getUri());
-                if (isRootDirectory()) ((NetworkModel) getViewModel()).updateFavs();
                 break;
             default:
                 super.onCtxAction(position, option);
@@ -189,7 +154,7 @@ public class NetworkBrowserFragment extends BaseBrowserFragment implements Simpl
     protected void browseRoot() {}
 
     private boolean allowLAN() {
-        return ExternalMonitor.isLan() || ExternalMonitor.isVPN();
+        return ExternalMonitor.INSTANCE.isLan() || ExternalMonitor.INSTANCE.isVPN();
     }
 
     @Override
@@ -197,22 +162,13 @@ public class NetworkBrowserFragment extends BaseBrowserFragment implements Simpl
         return getString(R.string.network_browsing);
     }
 
-    public void toggleFavorite() {
-        final MediaDatabase db = MediaDatabase.getInstance();
-        if (db.networkFavExists(getCurrentMedia().getUri()))
-            db.deleteNetworkFav(getCurrentMedia().getUri());
-        else
-            db.addNetworkFavItem(getCurrentMedia().getUri(), getCurrentMedia().getTitle(), getCurrentMedia().getArtworkURL());
-        final Activity activity = getActivity();
-        if (activity!= null) activity.invalidateOptionsMenu();
-    }
-
     /**
      * Update views visibility and emptiness info
      */
+    @Override
     protected void updateEmptyView() {
         if (getBinding() == null) return;
-        if (ExternalMonitor.connected.getValue()) {
+        if (ExternalMonitor.INSTANCE.isConnected()) {
             if (Util.isListEmpty(getViewModel().getDataset().getValue())) {
                 if (mSwipeRefreshLayout == null || mSwipeRefreshLayout.isRefreshing()) {
                     getBinding().empty.setText(R.string.loading);

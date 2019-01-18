@@ -25,13 +25,11 @@ import android.graphics.SurfaceTexture;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.MainThread;
+import androidx.annotation.MainThread;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.TextureView;
-
-import org.videolan.libvlc.util.AndroidUtil;
 
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,13 +41,6 @@ public class AWindow implements IVLCVout {
     private static final int ID_VIDEO = 0;
     private static final int ID_SUBTITLES = 1;
     private static final int ID_MAX = 2;
-
-    public interface SurfaceCallback {
-        @MainThread
-        void onSurfacesCreated(AWindow vout);
-        @MainThread
-        void onSurfacesDestroyed(AWindow vout);
-    }
 
     private class SurfaceHelper {
         private final int mId;
@@ -193,7 +184,7 @@ public class AWindow implements IVLCVout {
     private final static int SURFACE_STATE_READY = 2;
 
     private final SurfaceHelper[] mSurfaceHelpers;
-    private final SurfaceCallback mSurfaceCallback;
+    private final MediaPlayer.SurfaceListener mSurfaceCallback;
     private final AtomicInteger mSurfacesState = new AtomicInteger(SURFACE_STATE_INIT);
     private OnNewVideoLayoutListener mOnNewVideoLayoutListener = null;
     private ArrayList<IVLCVout.Callback> mIVLCVoutCallbacks = new ArrayList<IVLCVout.Callback>();
@@ -204,8 +195,7 @@ public class AWindow implements IVLCVout {
     private int mMouseAction = -1, mMouseButton = -1, mMouseX = -1, mMouseY = -1;
     private int mWindowWidth = -1, mWindowHeight = -1;
 
-    private SurfaceTextureThread mSurfaceTextureThread = AndroidUtil.isJellyBeanOrLater ?
-            new SurfaceTextureThread() : null;
+    private SurfaceTextureThread mSurfaceTextureThread = new SurfaceTextureThread();
 
     /**
      * Create an AWindow
@@ -214,7 +204,7 @@ public class AWindow implements IVLCVout {
      * MediaPlayer class).
      * @param surfaceCallback
      */
-    public AWindow(SurfaceCallback surfaceCallback) {
+    public AWindow(MediaPlayer.SurfaceListener surfaceCallback) {
         mSurfaceCallback = surfaceCallback;
         mSurfaceHelpers = new SurfaceHelper[ID_MAX];
         mSurfaceHelpers[ID_VIDEO] = null;
@@ -357,9 +347,8 @@ public class AWindow implements IVLCVout {
         for (IVLCVout.Callback cb : mIVLCVoutCallbacks)
             cb.onSurfacesDestroyed(this);
         if (mSurfaceCallback != null)
-            mSurfaceCallback.onSurfacesDestroyed(this);
-        if (AndroidUtil.isJellyBeanOrLater)
-            mSurfaceTextureThread.release();
+            mSurfaceCallback.onSurfaceDestroyed();
+        mSurfaceTextureThread.release();
     }
 
     @Override
@@ -383,7 +372,7 @@ public class AWindow implements IVLCVout {
             for (IVLCVout.Callback cb : mIVLCVoutCallbacks)
                 cb.onSurfacesCreated(this);
             if (mSurfaceCallback != null)
-                mSurfaceCallback.onSurfacesCreated(this);
+                mSurfaceCallback.onSurfaceCreated();
         }
     }
 
@@ -707,7 +696,7 @@ public class AWindow implements IVLCVout {
      */
     @SuppressWarnings("unused") /* used by JNI */
     boolean SurfaceTexture_attachToGLContext(int texName) {
-        return AndroidUtil.isJellyBeanOrLater && mSurfaceTextureThread.attachToGLContext(texName);
+        return mSurfaceTextureThread.attachToGLContext(texName);
     }
 
     /**

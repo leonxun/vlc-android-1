@@ -5,14 +5,13 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.databinding.DataBindingUtil;
+import androidx.databinding.DataBindingUtil;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
-import android.support.annotation.Nullable;
-import android.support.v4.content.LocalBroadcastManager;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
+import androidx.annotation.Nullable;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -31,6 +30,7 @@ import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.databinding.SearchActivityBinding;
 import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.media.MediaUtils;
+import org.videolan.vlc.util.Settings;
 import org.videolan.vlc.util.WorkersKt;
 
 public class SearchActivity extends AppCompatActivity implements TextWatcher, TextView.OnEditorActionListener {
@@ -44,7 +44,7 @@ public class SearchActivity extends AppCompatActivity implements TextWatcher, Te
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable_black_theme", false))
+        if (Settings.INSTANCE.getInstance(this).getBoolean("enable_black_theme", false))
             setTheme(R.style.Theme_VLC_Black);
         final Intent intent = getIntent();
         mBinding = DataBindingUtil.setContentView(this, R.layout.search_activity);
@@ -68,7 +68,7 @@ public class SearchActivity extends AppCompatActivity implements TextWatcher, Te
     }
 
     private void performSearh(final String query) {
-        WorkersKt.runBackground(new Runnable() {
+        WorkersKt.runIO(new Runnable() {
             @Override
             public void run() {
                 final SearchAggregate searchAggregate = mMedialibrary.search(query);
@@ -81,10 +81,8 @@ public class SearchActivity extends AppCompatActivity implements TextWatcher, Te
                             ((SearchResultAdapter)mBinding.artistsResults.getAdapter()).add(searchAggregate.getArtists());
                             ((SearchResultAdapter)mBinding.genresResults.getAdapter()).add(searchAggregate.getGenres());
                             ((SearchResultAdapter)mBinding.playlistsResults.getAdapter()).add(searchAggregate.getPlaylists());
-                            ((SearchResultAdapter)mBinding.episodesResults.getAdapter()).add(searchAggregate.getMediaSearchAggregate().getEpisodes());
-                            ((SearchResultAdapter)mBinding.moviesResults.getAdapter()).add(searchAggregate.getMediaSearchAggregate().getMovies());
-                            ((SearchResultAdapter)mBinding.othersResults.getAdapter()).add(searchAggregate.getMediaSearchAggregate().getOthers());
-                            ((SearchResultAdapter)mBinding.songsResults.getAdapter()).add(searchAggregate.getMediaSearchAggregate().getTracks());
+                            ((SearchResultAdapter)mBinding.othersResults.getAdapter()).add(searchAggregate.getVideos());
+                            ((SearchResultAdapter)mBinding.songsResults.getAdapter()).add(searchAggregate.getTracks());
                         }
                     });
                 }
@@ -143,7 +141,7 @@ public class SearchActivity extends AppCompatActivity implements TextWatcher, Te
             finish();
         }
         public void onItemClick(MediaLibraryItem item) {
-            MediaUtils.openArray(SearchActivity.this, item.getTracks(), 0);
+            MediaUtils.INSTANCE.playTracks(SearchActivity.this, item, 0);
             finish();
         }
     }

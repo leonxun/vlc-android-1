@@ -5,18 +5,18 @@ import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
-import android.support.design.widget.AppBarLayout;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.PreferenceCategory;
-import android.support.v7.preference.PreferenceScreen;
-import android.support.v7.widget.SwitchCompat;
+import com.google.android.material.appbar.AppBarLayout;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
+import androidx.preference.PreferenceScreen;
+import androidx.appcompat.widget.SwitchCompat;
 import android.view.View;
 
 import org.videolan.vlc.R;
 import org.videolan.vlc.extensions.ExtensionListing;
 import org.videolan.vlc.extensions.ExtensionsManager;
 import org.videolan.vlc.gui.view.ClickableSwitchPreference;
+import org.videolan.vlc.util.Settings;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +32,7 @@ public class PreferencesExtensions extends BasePreferenceFragment {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        mSettings = PreferenceManager.getDefaultSharedPreferences(getActivity().getApplication());
+        mSettings = Settings.INSTANCE.getInstance(requireContext());
         mExtensions = ExtensionsManager.getInstance().getExtensions(getActivity().getApplication(), false);
         preferenceScreen = this.getPreferenceScreen();
     }

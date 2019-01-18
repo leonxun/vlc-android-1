@@ -20,20 +20,17 @@
 
 package org.videolan.vlc.viewmodels.browser
 
-import android.arch.lifecycle.ViewModel
-import android.arch.lifecycle.ViewModelProvider
-import android.support.annotation.MainThread
-import kotlinx.coroutines.experimental.CommonPool
-import kotlinx.coroutines.experimental.CoroutineStart
-import kotlinx.coroutines.experimental.android.UI
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.withContext
+import android.content.Context
+import androidx.annotation.MainThread
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.medialibrary.media.MediaWrapper
-import org.videolan.vlc.providers.FileBrowserProvider
-import org.videolan.vlc.providers.FilePickerProvider
-import org.videolan.vlc.providers.NetworkProvider
-import org.videolan.vlc.providers.StorageProvider
+import org.videolan.vlc.providers.*
+import org.videolan.vlc.repository.DirectoryRepository
 import org.videolan.vlc.viewmodels.BaseModel
 
 const val TYPE_FILE = 0
@@ -41,27 +38,27 @@ const val TYPE_NETWORK = 1
 const val TYPE_PICKER = 2
 const val TYPE_STORAGE = 3
 
-open class BrowserModel(val url: String?, type: Int, showHiddenFiles: Boolean) : BaseModel<MediaLibraryItem>() {
+open class BrowserModel(context: Context, val url: String?, type: Int, showHiddenFiles: Boolean) : BaseModel<MediaLibraryItem>(context) {
 
-    protected val provider = when (type) {
-        TYPE_PICKER -> FilePickerProvider(dataset, url)
-        TYPE_NETWORK -> NetworkProvider(dataset, url, showHiddenFiles)
-        TYPE_STORAGE -> StorageProvider(dataset, url, showHiddenFiles)
-        else -> FileBrowserProvider(dataset, url, showHiddenFiles = showHiddenFiles)
+    protected val provider: BrowserProvider = when (type) {
+        TYPE_PICKER -> FilePickerProvider(context, dataset, url)
+        TYPE_NETWORK -> NetworkProvider(context, dataset, url, showHiddenFiles)
+        TYPE_STORAGE -> StorageProvider(context, dataset, url, showHiddenFiles)
+        else -> FileBrowserProvider(context, dataset, url, showHiddenFiles = showHiddenFiles)
     }
 
-    public override fun fetch() {}
+    override val loading = provider.loading
 
     override fun refresh() = provider.refresh()
 
-    fun browserRoot() = provider.browseRoot()
+    fun browserRoot() = launch { provider.browseRoot() }
 
     @MainThread
     override fun sort(sort: Int) {
-        launch(UI, CoroutineStart.UNDISPATCHED) {
+        launch {
             this@BrowserModel.sort = sort
             desc = !desc
-            dataset.value = withContext(CommonPool) { dataset.value.apply { sortWith(if (desc) descComp else ascComp) } }
+            dataset.value = withContext(Dispatchers.Default) { dataset.value.apply { sortWith(if (desc) descComp else ascComp) } }
         }
     }
 
@@ -75,12 +72,21 @@ open class BrowserModel(val url: String?, type: Int, showHiddenFiles: Boolean) :
 
     override fun onCleared() {
         provider.release()
+        super.onCleared()
     }
 
-    class Factory(val url: String?, private val type: Int,  private val showHiddenFiles: Boolean): ViewModelProvider.NewInstanceFactory() {
+    fun addCustomDirectory(path: String) = DirectoryRepository.getInstance(context).addCustomDirectory(path)
+
+    fun deleteCustomDirectory(path: String) = DirectoryRepository.getInstance(context).deleteCustomDirectory(path)
+
+    suspend fun customDirectoryExists(path: String) = DirectoryRepository.getInstance(context).customDirectoryExists(path)
+
+    suspend fun getMediaDirectories() = DirectoryRepository.getInstance(context).getMediaDirectories()
+
+    class Factory(val context: Context, val url: String?, private val type: Int,  private val showHiddenFiles: Boolean): ViewModelProvider.NewInstanceFactory() {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             @Suppress("UNCHECKED_CAST")
-            return BrowserModel(url, type, showHiddenFiles) as T
+            return BrowserModel(context.applicationContext, url, type, showHiddenFiles) as T
         }
     }
 }

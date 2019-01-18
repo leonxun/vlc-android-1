@@ -1,8 +1,8 @@
 package org.videolan.vlc.gui.browser;
 
-import android.databinding.DataBindingUtil;
+import androidx.databinding.DataBindingUtil;
 import android.net.Uri;
-import android.support.v7.widget.RecyclerView;
+import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -41,7 +41,7 @@ public class ExtensionAdapter extends RecyclerView.Adapter<ExtensionAdapter.View
                 mw.setDisplayTitle(item.getTitle());
                 mw.setDescription(item.getSubTitle());
                 mw.setType(getTypeAccordingToItem(item.type));
-                MediaUtils.openMedia(v.getContext(), mw);
+                MediaUtils.INSTANCE.openMedia(v.getContext(), mw);
             }
         }
 

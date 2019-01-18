@@ -6,7 +6,7 @@
         <import type="org.videolan.medialibrary.Tools" />
         <variable
             name="progress"
-            type="android.arch.lifecycle.LiveData&lt;org.videolan.vlc.media.Progress>" />
+            type="androidx.lifecycle.LiveData&lt;org.videolan.vlc.media.Progress>" />
         <variable
             name="player"
             type="org.videolan.vlc.gui.video.VideoPlayerActivity" />
@@ -31,6 +31,7 @@
         android:paddingRight="@dimen/time_margin_sides"
         android:paddingTop="4dp"
         android:paddingBottom="4dp"
+        android:layoutDirection="ltr"
         android:layout_alignParentTop="true"
         android:progressDrawable="@drawable/po_seekbar"
         android:thumb="@drawable/seekbar_thumb"

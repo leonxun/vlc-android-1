@@ -28,17 +28,17 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
-import android.preference.PreferenceManager
-import android.support.annotation.RequiresApi
-import android.support.v17.leanback.app.BackgroundManager
-import android.support.v17.leanback.widget.*
-import android.support.v4.content.ContextCompat
 import android.widget.ImageView
+import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
+import androidx.leanback.app.BackgroundManager
+import androidx.leanback.widget.*
 import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.vlc.R
 import org.videolan.vlc.gui.tv.TvUtil
 import org.videolan.vlc.interfaces.Sortable
-import org.videolan.vlc.util.Constants
+import org.videolan.vlc.util.AUDIO_ITEM
+import org.videolan.vlc.util.Settings
 import org.videolan.vlc.viewmodels.BaseModel
 
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
@@ -47,12 +47,12 @@ abstract class MediaLibBrowserFragment<T : BaseModel<out MediaLibraryItem>> : Gr
     private var mSelectedItem: Any? = null
     lateinit var model: T
     protected var currentItem: MediaLibraryItem? = null
-    protected val preferences: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(requireContext()) }
+    protected val preferences: SharedPreferences by lazy { Settings.getInstance(requireContext()) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        currentItem = if (savedInstanceState != null) savedInstanceState.getParcelable<Parcelable>(Constants.AUDIO_ITEM) as? MediaLibraryItem
-        else requireActivity().intent.getParcelableExtra<Parcelable>(Constants.AUDIO_ITEM) as? MediaLibraryItem
+        currentItem = if (savedInstanceState != null) savedInstanceState.getParcelable<Parcelable>(AUDIO_ITEM) as? MediaLibraryItem
+        else requireActivity().intent.getParcelableExtra<Parcelable>(AUDIO_ITEM) as? MediaLibraryItem
         mBackgroundManager = BackgroundManager.getInstance(requireActivity())
         setOnSearchClickedListener { sort(requireActivity().findViewById(R.id.title_orb)) }
     }
@@ -79,11 +79,16 @@ abstract class MediaLibBrowserFragment<T : BaseModel<out MediaLibraryItem>> : Gr
         mAdapter.setItems(list, TvUtil.diffCallback)
     }
 
+    private var currentArt : String? = null
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     override fun onItemSelected(itemViewHolder: Presenter.ViewHolder?, item: Any?,
                                 rowViewHolder: RowPresenter.ViewHolder?, row: Row?) {
         mSelectedItem = item
-        item?.run { TvUtil.updateBackground(mBackgroundManager, this) }
+        (item as? MediaLibraryItem)?.run {
+            if (currentArt == artworkMrl) return@run
+            currentArt = artworkMrl
+            TvUtil.updateBackground(mBackgroundManager, this)
+        }
     }
 
     override fun onItemClicked(itemViewHolder: Presenter.ViewHolder?, item: Any?,

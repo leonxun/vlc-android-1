@@ -21,12 +21,13 @@
 package org.videolan.vlc.gui.tv;
 
 import android.net.Uri;
-import android.support.v17.leanback.widget.AbstractDetailsDescriptionPresenter;
+import androidx.leanback.widget.AbstractDetailsDescriptionPresenter;
 
 public class DetailsDescriptionPresenter extends
         AbstractDetailsDescriptionPresenter {
     public static final String TAG ="DetailsDescriptionPresenter";
 
+    @Override
     protected void onBindDescription(ViewHolder viewHolder, Object itemData) {
         MediaItemDetails details = (MediaItemDetails) itemData;
         // In a production app, the itemData object contains the information

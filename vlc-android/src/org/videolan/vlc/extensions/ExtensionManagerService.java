@@ -33,7 +33,7 @@ import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -207,7 +207,7 @@ public class ExtensionManagerService extends Service {
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        MediaUtils.openMediaNoUi(ExtensionManagerService.this, media);
+                        MediaUtils.INSTANCE.openMediaNoUi(ExtensionManagerService.this, media);
                     }
                 });
             }

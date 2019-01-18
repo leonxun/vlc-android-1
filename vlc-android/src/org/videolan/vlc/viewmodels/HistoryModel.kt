@@ -20,21 +20,19 @@
 
 package org.videolan.vlc.viewmodels
 
-import kotlinx.coroutines.experimental.withContext
-import org.videolan.medialibrary.Medialibrary
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.videolan.medialibrary.media.MediaWrapper
-import org.videolan.vlc.util.VLCIO
 
-class HistoryModel: BaseModel<MediaWrapper>() {
+class HistoryModel(context: Context) : MedialibraryModel<MediaWrapper>(context) {
 
     override fun canSortByName() = false
 
-    override fun fetch() {
-        refresh()
-    }
-
     override suspend fun updateList() {
-        dataset.value = withContext(VLCIO) { Medialibrary.getInstance().lastMediaPlayed().toMutableList() }
+        dataset.value = withContext(Dispatchers.Default) { medialibrary.lastMediaPlayed().toMutableList() }
     }
 
     fun moveUp(media: MediaWrapper) {
@@ -46,5 +44,12 @@ class HistoryModel: BaseModel<MediaWrapper>() {
 
     fun clear() {
         dataset.value = mutableListOf()
+    }
+
+    class Factory(private val context: Context): ViewModelProvider.NewInstanceFactory() {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            @Suppress("UNCHECKED_CAST")
+            return HistoryModel(context.applicationContext) as T
+        }
     }
 }

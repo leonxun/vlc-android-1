@@ -28,19 +28,18 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
-import android.support.annotation.RequiresApi
-import android.support.v17.leanback.app.BackgroundManager
-import android.support.v17.leanback.widget.DiffCallback
-import android.support.v17.leanback.widget.ListRow
-import android.support.v17.leanback.widget.Row
-import android.support.v4.content.ContextCompat
 import android.text.TextUtils
 import android.view.View
-import kotlinx.coroutines.experimental.CommonPool
-import kotlinx.coroutines.experimental.CoroutineStart
-import kotlinx.coroutines.experimental.android.UI
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.withContext
+import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.leanback.app.BackgroundManager
+import androidx.leanback.widget.DiffCallback
+import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.Row
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.videolan.medialibrary.media.DummyItem
 import org.videolan.medialibrary.media.MediaLibraryItem
 import org.videolan.medialibrary.media.MediaWrapper
@@ -53,9 +52,7 @@ import org.videolan.vlc.gui.helpers.UiTools
 import org.videolan.vlc.gui.tv.audioplayer.AudioPlayerActivity
 import org.videolan.vlc.gui.tv.browser.VerticalGridActivity
 import org.videolan.vlc.media.MediaUtils
-import org.videolan.vlc.util.AndroidDevices
-import org.videolan.vlc.util.Constants
-import org.videolan.vlc.util.Constants.*
+import org.videolan.vlc.util.*
 import java.util.*
 import kotlin.collections.ArrayList
 
@@ -80,12 +77,12 @@ object TvUtil {
         }
 
         override fun getChangePayload(oldItem: MediaLibraryItem, newItem: MediaLibraryItem): Any {
-            if (oldItem.itemType == MediaLibraryItem.TYPE_DUMMY) return Constants.UPDATE_DESCRIPTION
+            if (oldItem.itemType == MediaLibraryItem.TYPE_DUMMY) return UPDATE_DESCRIPTION
             val oldMedia = oldItem as MediaWrapper
             val newMedia = newItem as MediaWrapper
-            if (oldMedia.time != newMedia.time) return Constants.UPDATE_TIME
-            return if (!TextUtils.equals(oldMedia.artworkMrl, newMedia.artworkMrl)) Constants.UPDATE_THUMB
-            else Constants.UPDATE_SEEN
+            if (oldMedia.time != newMedia.time) return UPDATE_TIME
+            return if (!TextUtils.equals(oldMedia.artworkMrl, newMedia.artworkMrl)) UPDATE_THUMB
+            else UPDATE_SEEN
         }
     }
 
@@ -111,32 +108,35 @@ object TvUtil {
             MediaUtils.openMedia(activity, media)
     }
 
-    fun openMedia(activity: Activity, item: Any?, row: Row?) {
+    fun openMedia(activity: FragmentActivity, item: Any?, row: Row?) {
         when (item) {
             is MediaWrapper -> when {
                 item.type == MediaWrapper.TYPE_AUDIO -> openAudioCategory(activity, item)
                 item.type == MediaWrapper.TYPE_DIR -> {
                     val intent = Intent(activity, VerticalGridActivity::class.java)
-                    intent.putExtra(MainTvActivity.BROWSER_TYPE, if ("file" == item.uri.scheme) Constants.HEADER_DIRECTORIES else Constants.HEADER_NETWORK)
+                    intent.putExtra(MainTvActivity.BROWSER_TYPE, if ("file" == item.uri.scheme) HEADER_DIRECTORIES else HEADER_NETWORK)
                     intent.data = item.uri
                     activity.startActivity(intent)
                 }
                 item.type == MediaWrapper.TYPE_GROUP -> {
                     val intent = Intent(activity, VerticalGridActivity::class.java)
-                    intent.putExtra(MainTvActivity.BROWSER_TYPE, Constants.HEADER_VIDEO)
+                    intent.putExtra(MainTvActivity.BROWSER_TYPE, HEADER_VIDEO)
                     val title = item.title.substring(if (item.title.toLowerCase().startsWith("the")) 4 else 0)
-                    intent.putExtra(Constants.KEY_GROUP, title)
+                    intent.putExtra(KEY_GROUP, title)
                     activity.startActivity(intent)
                 }
                 else -> MediaUtils.openMedia(activity, item)
             }
-            is DummyItem -> if (item.id == Constants.HEADER_STREAM) {
-                activity.startActivity(Intent(activity, DialogActivity::class.java).setAction(DialogActivity.KEY_STREAM)
+            is DummyItem -> when {
+                item.id == HEADER_STREAM -> activity.startActivity(Intent(activity, DialogActivity::class.java).setAction(DialogActivity.KEY_STREAM)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } else {
-                val intent = Intent(activity, VerticalGridActivity::class.java)
-                intent.putExtra(MainTvActivity.BROWSER_TYPE, item.id)
-                activity.startActivity(intent)
+                item.id == HEADER_SERVER -> activity.startActivity(Intent(activity, DialogActivity::class.java).setAction(DialogActivity.KEY_SERVER)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                else -> {
+                    val intent = Intent(activity, VerticalGridActivity::class.java)
+                    intent.putExtra(MainTvActivity.BROWSER_TYPE, item.id)
+                    activity.startActivity(intent)
+                }
             }
             is MediaLibraryItem -> openAudioCategory(activity, item)
         }
@@ -178,7 +178,7 @@ object TvUtil {
                 val intent = Intent(context, VerticalGridActivity::class.java)
                 intent.putExtra(AUDIO_ITEM, mediaLibraryItem)
                 intent.putExtra(AUDIO_CATEGORY, CATEGORY_ALBUMS)
-                intent.putExtra(MainTvActivity.BROWSER_TYPE, Constants.HEADER_CATEGORIES)
+                intent.putExtra(MainTvActivity.BROWSER_TYPE, HEADER_CATEGORIES)
                 context.startActivity(intent)
             }
         }
@@ -187,18 +187,18 @@ object TvUtil {
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     fun updateBackground(bm: BackgroundManager?, item: Any?) {
         if (bm === null || item === null) return
-        if (item is MediaLibraryItem) launch(UI, CoroutineStart.UNDISPATCHED){
+        if (item is MediaLibraryItem) AppScope.launch {
             val crop = item.itemType != MediaLibraryItem.TYPE_MEDIA || (item as MediaWrapper).type == MediaWrapper.TYPE_AUDIO
             val artworkMrl = item.artworkMrl
             if (!TextUtils.isEmpty(artworkMrl)) {
-                val blurred = withContext(CommonPool) {
-                    if (bm == null) return@withContext null
+                val blurred = withContext(Dispatchers.IO) {
                     var cover: Bitmap? = AudioUtil.readCoverBitmap(Uri.decode(artworkMrl), 512)
                             ?: return@withContext null
                     if (crop)
                         cover = BitmapUtil.centerCrop(cover, cover!!.width, cover.width * 10 / 16)
                     UiTools.blurBitmap(cover, 10f)
                 }
+                @Suppress("SENSELESS_COMPARISON")
                 if (bm !== null) {
                     bm.color = 0
                     bm.drawable = BitmapDrawable(VLCApplication.getAppResources(), blurred)
@@ -208,7 +208,8 @@ object TvUtil {
         clearBackground(bm)
     }
 
-    private fun clearBackground(bm: BackgroundManager) {
+    private fun clearBackground(bm: BackgroundManager?) {
+        if (bm === null) return
         bm.color = ContextCompat.getColor(VLCApplication.getAppContext(), R.color.tv_bg)
         bm.drawable = null
     }
@@ -230,16 +231,17 @@ object TvUtil {
             }
             MediaLibraryItem.TYPE_DUMMY -> {
                 return when (mediaLibraryItem.id) {
-                    Constants.HEADER_VIDEO -> R.drawable.ic_video_collection_big
-                    Constants.HEADER_DIRECTORIES -> R.drawable.ic_menu_folder_big
-                    Constants.HEADER_NETWORK -> R.drawable.ic_menu_network_big
-                    Constants.HEADER_STREAM -> R.drawable.ic_menu_stream_big
-                    Constants.ID_SETTINGS -> R.drawable.ic_menu_preferences_big
-                    Constants.ID_ABOUT_TV, Constants.ID_LICENCE -> R.drawable.ic_default_cone
-                    Constants.CATEGORY_ARTISTS -> R.drawable.ic_artist_big
-                    Constants.CATEGORY_ALBUMS -> R.drawable.ic_album_big
-                    Constants.CATEGORY_GENRES -> R.drawable.ic_genre_big
-                    Constants.CATEGORY_SONGS, Constants.CATEGORY_NOW_PLAYING -> R.drawable.ic_song_big
+                    HEADER_VIDEO -> R.drawable.ic_video_collection_big
+                    HEADER_DIRECTORIES -> R.drawable.ic_menu_folder_big
+                    HEADER_NETWORK -> R.drawable.ic_menu_network_big
+                    HEADER_SERVER -> R.drawable.ic_menu_network_add_big
+                    HEADER_STREAM -> R.drawable.ic_menu_stream_big
+                    ID_SETTINGS -> R.drawable.ic_menu_preferences_big
+                    ID_ABOUT_TV, ID_LICENCE -> R.drawable.ic_default_cone
+                    CATEGORY_ARTISTS -> R.drawable.ic_artist_big
+                    CATEGORY_ALBUMS -> R.drawable.ic_album_big
+                    CATEGORY_GENRES -> R.drawable.ic_genre_big
+                    CATEGORY_SONGS, CATEGORY_NOW_PLAYING -> R.drawable.ic_song_big
                     else -> R.drawable.ic_browser_unknown_big_normal
                 }
             }

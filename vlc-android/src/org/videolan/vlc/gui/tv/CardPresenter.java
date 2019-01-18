@@ -29,10 +29,6 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
-import android.preference.PreferenceManager;
-import android.support.v17.leanback.widget.ImageCardView;
-import android.support.v17.leanback.widget.Presenter;
-import android.support.v4.content.ContextCompat;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
@@ -46,8 +42,13 @@ import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.gui.helpers.AudioUtil;
 import org.videolan.vlc.gui.helpers.ImageLoaderKt;
 import org.videolan.vlc.util.Constants;
+import org.videolan.vlc.util.Settings;
 
 import java.util.List;
+
+import androidx.core.content.ContextCompat;
+import androidx.leanback.widget.ImageCardView;
+import androidx.leanback.widget.Presenter;
 
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 public class CardPresenter extends Presenter {
@@ -66,7 +67,7 @@ public class CardPresenter extends Presenter {
         mContext = context;
         mRes = mContext.getResources();
         sDefaultCardImage = ContextCompat.getDrawable(mContext, R.drawable.ic_default_cone);
-        mIsSeenMediaMarkerVisible = PreferenceManager.getDefaultSharedPreferences(VLCApplication.getAppContext()).getBoolean("media_seen", true);
+        mIsSeenMediaMarkerVisible = Settings.INSTANCE.getInstance(context).getBoolean("media_seen", true);
 
     }
 
@@ -85,7 +86,8 @@ public class CardPresenter extends Presenter {
                 final MediaWrapper media = (MediaWrapper) item;
                 final boolean group = media.getType() == MediaWrapper.TYPE_GROUP;
                 final boolean folder = media.getType() == MediaWrapper.TYPE_DIR;
-                if (!folder && (group || !media.isThumbnailGenerated())) {
+                final boolean video = media.getType() == MediaWrapper.TYPE_VIDEO;
+                if (!folder && (group || (!noArt && video && !media.isThumbnailGenerated()))) {
                      ImageLoaderKt.loadImage(mCardView, item);
                      return;
                 }

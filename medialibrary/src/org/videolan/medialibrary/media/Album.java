@@ -8,6 +8,7 @@ import org.videolan.libvlc.util.VLCUtil;
 import org.videolan.medialibrary.Medialibrary;
 import org.videolan.medialibrary.R;
 
+@SuppressWarnings("JniMissingFunction")
 public class Album extends MediaLibraryItem {
     public static final String TAG = "VLC/Album";
     public static class SpecialRes {
@@ -37,6 +38,7 @@ public class Album extends MediaLibraryItem {
         }
     }
 
+    @Override
     public long getId() {
         return mId;
     }
@@ -50,6 +52,7 @@ public class Album extends MediaLibraryItem {
         return releaseYear;
     }
 
+    @Override
     public String getArtworkMrl() {
         return artworkMrl;
     }
@@ -59,21 +62,43 @@ public class Album extends MediaLibraryItem {
         return null;
     }
 
+    @Override
     public int getTracksCount() {
         return mTracksCount;
+    }
+
+    public int getRealTracksCount() {
+        Medialibrary ml = Medialibrary.getInstance();
+        return ml.isInitiated() ? nativeGetTracksCount(ml, mId) : 0;
     }
 
     public int getDuration() {
         return duration;
     }
 
+    @Override
     public MediaWrapper[] getTracks() {
-        return getTracks(Medialibrary.SORT_DEFAULT, false);
+        return getTracks(Medialibrary.SORT_ALBUM, false);
     }
 
     public MediaWrapper[] getTracks(int sort, boolean desc) {
         Medialibrary ml = Medialibrary.getInstance();
-        return ml != null && ml.isInitiated() ? nativeGetTracksFromAlbum(ml, mId, sort, desc) : Medialibrary.EMPTY_COLLECTION;
+        return ml.isInitiated() ? nativeGetTracks(ml, mId, sort, desc) : Medialibrary.EMPTY_COLLECTION;
+    }
+
+    public MediaWrapper[] getPagedTracks(int sort, boolean desc, int nbItems, int offset) {
+        final Medialibrary ml = Medialibrary.getInstance();
+        return ml.isInitiated() ? nativeGetPagedTracks(ml, mId, sort, desc, nbItems, offset) : Medialibrary.EMPTY_COLLECTION;
+    }
+
+    public MediaWrapper[] searchTracks(String query, int sort, boolean desc, int nbItems, int offset) {
+        final Medialibrary ml = Medialibrary.getInstance();
+        return ml.isInitiated() ? nativeSearch(ml, mId, query, sort, desc, nbItems, offset) : Medialibrary.EMPTY_COLLECTION;
+    }
+
+    public int searchTracksCount(String query) {
+        final Medialibrary ml = Medialibrary.getInstance();
+        return ml.isInitiated() ? nativeGetSearchCount(ml, mId, query) : 0;
     }
 
     @Override
@@ -81,7 +106,11 @@ public class Album extends MediaLibraryItem {
         return TYPE_ALBUM;
     }
 
-    private native MediaWrapper[] nativeGetTracksFromAlbum(Medialibrary ml, long mId, int sort, boolean desc);
+    private native MediaWrapper[] nativeGetTracks(Medialibrary ml, long mId, int sort, boolean desc);
+    private native MediaWrapper[] nativeGetPagedTracks(Medialibrary ml, long mId, int sort, boolean desc, int nbItems, int offset);
+    private native MediaWrapper[] nativeSearch(Medialibrary ml, long mId, String query, int sort, boolean desc, int nbItems, int offset);
+    private native int nativeGetTracksCount(Medialibrary ml, long id);
+    private native int nativeGetSearchCount(Medialibrary ml, long mId, String query);
 
     @Override
     public void writeToParcel(Parcel parcel, int i) {
@@ -96,10 +125,12 @@ public class Album extends MediaLibraryItem {
 
     public static Parcelable.Creator<Album> CREATOR
             = new Parcelable.Creator<Album>() {
+        @Override
         public Album createFromParcel(Parcel in) {
             return new Album(in);
         }
 
+        @Override
         public Album[] newArray(int size) {
             return new Album[size];
         }

@@ -19,17 +19,12 @@
  *****************************************************************************/
 package org.videolan.vlc;
 
+import android.annotation.SuppressLint;
 import android.app.Application;
-import android.arch.lifecycle.Lifecycle;
-import android.arch.lifecycle.ProcessLifecycleOwner;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.content.res.Resources;
-import android.preference.PreferenceManager;
-import android.support.v4.app.DialogFragment;
-import android.support.v4.util.SimpleArrayMap;
 import android.util.Log;
 
 import org.videolan.libvlc.Dialog;
@@ -40,15 +35,22 @@ import org.videolan.vlc.gui.dialogs.VlcProgressDialog;
 import org.videolan.vlc.gui.helpers.AudioUtil;
 import org.videolan.vlc.gui.helpers.BitmapCache;
 import org.videolan.vlc.gui.helpers.NotificationHelper;
-import org.videolan.vlc.util.AndroidDevices;
+import org.videolan.vlc.util.Settings;
 import org.videolan.vlc.util.Strings;
 import org.videolan.vlc.util.Util;
 import org.videolan.vlc.util.VLCInstance;
 import org.videolan.vlc.util.WorkersKt;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.InvocationTargetException;
 import java.util.Calendar;
-import java.util.Locale;
+
+import androidx.collection.SimpleArrayMap;
+import androidx.fragment.app.DialogFragment;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.ProcessLifecycleOwner;
+
+import static org.videolan.vlc.gui.helpers.UiTools.setLocale;
 
 public class VLCApplication extends Application {
     public final static String TAG = "VLC/VLCApplication";
@@ -59,12 +61,13 @@ public class VLCApplication extends Application {
     public final static String SLEEP_INTENT = Strings.buildPkgString("SleepIntent");
 
     public static Calendar sPlayerSleepTime = null;
-    private static boolean sTV;
-    private static SharedPreferences sSettings;
 
     private static SimpleArrayMap<String, WeakReference<Object>> sDataMap = new SimpleArrayMap<>();
 
     private static int sDialogCounter = 0;
+
+    // Property to get the new locale only on restart to prevent change the locale partially on runtime
+    private static String locale = "";
 
     public VLCApplication() {
         super();
@@ -74,20 +77,25 @@ public class VLCApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        sSettings = PreferenceManager.getDefaultSharedPreferences(this);
-        sTV = AndroidDevices.isAndroidTv || (!AndroidDevices.isChromeBook && !AndroidDevices.hasTsp);
+        WorkersKt.runIO(new Runnable() {
+            @Override
+            public void run() {
+                locale = Settings.INSTANCE.getInstance(instance).getString("set_locale", "");
 
-        setLocale();
+                // Set the locale for API < 24 and set application resources and direction for API >=24
+                setLocale(getAppContext());
+            }
+        });
 
-        WorkersKt.runBackground(new Runnable() {
+        WorkersKt.runIO(new Runnable() {
             @Override
             public void run() {
 
                 if (AndroidUtil.isOOrLater) NotificationHelper.createNotificationChannels(VLCApplication.this);
                 // Prepare cache folder constants
-                AudioUtil.prepareCacheFolder(instance);
+                AudioUtil.prepareCacheFolder(getAppContext());
 
-                if (!VLCInstance.testCompatibleCPU(instance)) return;
+                if (!VLCInstance.testCompatibleCPU(getAppContext())) return;
                 Dialog.setCallbacks(VLCInstance.get(), mDialogCallbacks);
             }
         });
@@ -96,7 +104,7 @@ public class VLCApplication extends Application {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        setLocale();
+        setLocale(getAppContext());
     }
 
     /**
@@ -121,8 +129,19 @@ public class VLCApplication extends Application {
     /**
      * @return the main context of the Application
      */
+    @SuppressLint("PrivateApi")
     public static Context getAppContext() {
-        return instance;
+        if (instance != null) return instance;
+        else {
+            try {
+                instance = (VLCApplication) Class.forName("android.app.ActivityThread").getDeclaredMethod("currentApplication").invoke(null);
+            } catch (IllegalAccessException ignored) {}
+            catch (InvocationTargetException ignored) {}
+            catch (NoSuchMethodException ignored) {}
+            catch (ClassNotFoundException ignored) {}
+            catch (ClassCastException ignored) {}
+            return instance;
+        }
     }
 
     /**
@@ -130,15 +149,11 @@ public class VLCApplication extends Application {
      */
     public static Resources getAppResources()
     {
-        return instance.getResources();
+        return getAppContext().getResources();
     }
 
-    public static SharedPreferences getSettings() {
-        return sSettings;
-    }
-
-    public static boolean showTvUi() {
-        return sTV || (sSettings != null && sSettings.getBoolean("tv_ui", false));
+    public static String getLocale(){
+        return locale;
     }
 
     public static void storeData(String key, Object data) {
@@ -198,45 +213,12 @@ public class VLCApplication extends Application {
 
     private void fireDialog(Dialog dialog, String key) {
         storeData(key, dialog);
-        startActivity(new Intent(instance, DialogActivity.class).setAction(key)
+        startActivity(new Intent(getAppContext(), DialogActivity.class).setAction(key)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
     public static Medialibrary getMLInstance() {
         return Medialibrary.getInstance();
-    }
-
-    public static void setLocale() {
-        if (sSettings == null) PreferenceManager.getDefaultSharedPreferences(instance);
-        // Are we using advanced debugging - locale?
-        String p = sSettings.getString("set_locale", "");
-        if (!p.equals("")) {
-            Locale locale;
-            // workaround due to region code
-            if (p.equals("zh-TW")) {
-                locale = Locale.TRADITIONAL_CHINESE;
-            } else if(p.startsWith("zh")) {
-                locale = Locale.CHINA;
-            } else if(p.equals("pt-BR")) {
-                locale = new Locale("pt", "BR");
-            } else if(p.equals("bn-IN") || p.startsWith("bn")) {
-                locale = new Locale("bn", "IN");
-            } else {
-                /**
-                 * Avoid a crash of
-                 * java.lang.AssertionError: couldn't initialize LocaleData for locale
-                 * if the user enters nonsensical region codes.
-                 */
-                if(p.contains("-"))
-                    p = p.substring(0, p.indexOf('-'));
-                locale = new Locale(p);
-            }
-            Locale.setDefault(locale);
-            Configuration config = new Configuration();
-            config.locale = locale;
-            getAppResources().updateConfiguration(config,
-                    getAppResources().getDisplayMetrics());
-        }
     }
 
     /**

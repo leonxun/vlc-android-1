@@ -34,8 +34,6 @@ import android.view.InputDevice;
 import android.view.MotionEvent;
 
 import org.videolan.libvlc.util.AndroidUtil;
-import org.videolan.medialibrary.media.MediaWrapper;
-import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
 
 import java.io.BufferedReader;
@@ -45,7 +43,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.StringTokenizer;
@@ -54,10 +51,11 @@ public class AndroidDevices {
     public final static String TAG = "VLC/UiTools/AndroidDevices";
     public final static String EXTERNAL_PUBLIC_DIRECTORY = Environment.getExternalStorageDirectory().getPath();
     public final static boolean isPhone;
-    public final static boolean hasCombBar;
     public final static boolean hasNavBar;
     public final static boolean hasTsp;
     public final static boolean isAndroidTv;
+    public final static boolean watchDevices;
+    public final static boolean isTv;
     public final static boolean isAmazon = TextUtils.equals(Build.MANUFACTURER,"Amazon");
     public final static boolean isChromeBook;
     public static final boolean hasPiP;
@@ -100,13 +98,18 @@ public class AndroidDevices {
         final PackageManager pm = ctx != null ? ctx.getPackageManager() : null;
         hasTsp = pm == null || pm.hasSystemFeature("android.hardware.touchscreen");
         isAndroidTv = pm != null && pm.hasSystemFeature("android.software.leanback");
+        watchDevices = isAndroidTv && isBbox();
         isChromeBook = pm != null && pm.hasSystemFeature("org.chromium.arc.device_management");
+        isTv = isAndroidTv || (!isChromeBook && !hasTsp);
         hasPlayServices = pm == null || hasPlayServices(pm);
         hasPiP = AndroidUtil.isOOrLater || AndroidUtil.isNougatOrLater && isAndroidTv;
         final TelephonyManager tm = ctx != null ? ((TelephonyManager) ctx.getSystemService(Context.TELEPHONY_SERVICE)) : null;
         isPhone = tm == null || tm.getPhoneType() != TelephonyManager.PHONE_TYPE_NONE;
         // hasCombBar test if device has Combined Bar : only for tablet with Honeycomb or ICS
-        hasCombBar = !AndroidDevices.isPhone && !AndroidUtil.isJellyBeanMR1OrLater;
+    }
+
+    private static boolean isBbox() {
+        return Build.MODEL.startsWith("Bouygtel");
     }
 
     public static boolean hasExternalStorage() {
@@ -150,36 +153,6 @@ public class AndroidDevices {
         return list;
     }
 
-    public static List<MediaWrapper> getMediaDirectoriesList() {
-        final String storages[] = AndroidDevices.getMediaDirectories();
-        final LinkedList<MediaWrapper> list = new LinkedList<>();
-        MediaWrapper directory;
-        for (String mediaDirLocation : storages) {
-            if (!(new File(mediaDirLocation).exists())) continue;
-            directory = new MediaWrapper(AndroidUtil.PathToUri(mediaDirLocation));
-            directory.setType(MediaWrapper.TYPE_DIR);
-            if (TextUtils.equals(AndroidDevices.EXTERNAL_PUBLIC_DIRECTORY, mediaDirLocation))
-                directory.setDisplayTitle(VLCApplication.getAppResources().getString(R.string.internal_memory));
-            else {
-                final String deviceName = FileUtils.getStorageTag(directory.getTitle());
-                if (deviceName != null) directory.setDisplayTitle(deviceName);
-            }
-            list.add(directory);
-        }
-        return list;
-    }
-
-    public static String[] getMediaDirectories() {
-        return getMediaDirectories(VLCApplication.getAppContext());
-    }
-
-    public static String[] getMediaDirectories(Context ctx) {
-        final List<String> list = new ArrayList<>();
-        list.add(EXTERNAL_PUBLIC_DIRECTORY);
-        list.addAll(getExternalStorageDirectories());
-        list.addAll(Arrays.asList(CustomDirectories.getCustomDirectories(ctx)));
-        return list.toArray(new String[list.size()]);
-    }
 
     @TargetApi(VERSION_CODES.HONEYCOMB_MR1)
     public static float getCenteredAxis(MotionEvent event, InputDevice device, int axis) {
@@ -200,6 +173,10 @@ public class AndroidDevices {
             }
         }
         return 0;
+    }
+
+    public static boolean showTvUi(Context context) {
+        return isTv || (Settings.INSTANCE.getInstance(context.getApplicationContext()).getBoolean("tv_ui", false));
     }
 
     private static boolean isManufacturerBannedForMediastyleNotifications() {

@@ -19,16 +19,15 @@
  */
 package org.videolan.vlc
 
-import android.arch.lifecycle.LiveData
-import android.arch.lifecycle.MutableLiveData
-import kotlinx.coroutines.experimental.CommonPool
-import kotlinx.coroutines.experimental.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.videolan.libvlc.RendererDiscoverer
 import org.videolan.libvlc.RendererItem
+import org.videolan.vlc.util.AppScope
 import org.videolan.vlc.util.LiveDataset
 import org.videolan.vlc.util.VLCInstance
 import org.videolan.vlc.util.retry
-import org.videolan.vlc.util.uiJob
 import java.util.*
 
 object RendererDelegate : RendererDiscoverer.EventListener {
@@ -38,21 +37,20 @@ object RendererDelegate : RendererDiscoverer.EventListener {
     val renderers : LiveDataset<RendererItem> = LiveDataset()
 
     @Volatile private var started = false
-    val selectedRenderer: LiveData<RendererItem> = MutableLiveData()
 
     init {
-        ExternalMonitor.connected.observeForever { uiJob(false) { if (it == true) start() else stop() } }
+        ExternalMonitor.connected.observeForever { AppScope.launch { if (it == true) start() else stop() } }
     }
 
     suspend fun start() {
         if (started) return
         started = true
-        val libVlc = withContext(CommonPool) { VLCInstance.get() }
+        val libVlc = withContext(Dispatchers.IO) { VLCInstance.get() }
         for (discoverer in RendererDiscoverer.list(libVlc)) {
             val rd = RendererDiscoverer(libVlc, discoverer.name)
             discoverers.add(rd)
             rd.setEventListener(this@RendererDelegate)
-            retry(5, 1000L) { rd.start() }
+            retry(5, 1000L) { if (!rd.isReleased) rd.start() else false }
         }
     }
 
@@ -67,7 +65,6 @@ object RendererDelegate : RendererDiscoverer.EventListener {
     private fun clear() {
         discoverers.clear()
         renderers.clear()
-        (selectedRenderer as MutableLiveData).value = null
     }
 
     override fun onEvent(event: RendererDiscoverer.Event?) {
@@ -76,10 +73,4 @@ object RendererDelegate : RendererDiscoverer.EventListener {
             RendererDiscoverer.Event.ItemDeleted -> { renderers.remove(event.item); event.item.release() }
         }
     }
-
-    fun selectRenderer(item: RendererItem?) {
-        (selectedRenderer as MutableLiveData).value = item
-    }
-
-    fun hasRenderer() = selectedRenderer.value !== null
 }

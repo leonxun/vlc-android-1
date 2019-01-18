@@ -6,7 +6,7 @@
         android:orderInCategory="1"
         android:id="@+id/ml_menu_renderers"
         android:icon="@drawable/ic_am_renderer_normal_w"
-        android:title="@string/searchable_hint"
+        android:title="@string/cast_option_title"
         vlc:showAsAction="always|collapseActionView"
         android:visible="false"/>
 
@@ -14,7 +14,7 @@
         android:orderInCategory="1"
         android:id="@+id/ml_menu_filter"
         android:icon="@drawable/ic_menu_search_normal_w"
-        vlc:actionViewClass="android.support.v7.widget.SearchView"
+        vlc:actionViewClass="androidx.appcompat.widget.SearchView"
         android:title="@string/searchable_hint"
         vlc:showAsAction="always|collapseActionView"/>
     <item
@@ -22,14 +22,14 @@
         android:id="@+id/ml_menu_last_playlist"
         android:icon="@drawable/ic_menu_lastplaylist"
         android:title="@string/last_playlist"
-        vlc:showAsAction="always|collapseActionView"
+        vlc:showAsAction="ifRoom|collapseActionView"
         android:visible="false"/>
     <item
         android:orderInCategory="2"
         android:title="@string/sortby"
         android:icon="@drawable/ic_menu_sort"
         android:id="@+id/ml_menu_sortby"
-        vlc:showAsAction="always|collapseActionView"
+        vlc:showAsAction="ifRoom|collapseActionView"
         android:visible="false">
         <menu>
             <item
@@ -62,6 +62,11 @@
                 android:visible="false" />
             <item
                 android:orderInCategory="2"
+                android:id="@+id/ml_menu_sortby_last_modified"
+                android:title="@string/sortby_last_modified_date"
+                android:visible="false" />
+            <item
+                android:orderInCategory="2"
                 android:id="@+id/ml_menu_sortby_number"
                 android:title="@string/sortby_number"
                 android:visible="false" />
@@ -72,11 +77,6 @@
         android:id="@+id/ml_menu_refresh"
         android:icon="@drawable/ic_menu_refresh"
         android:title="@string/refresh"/>
-    <item
-        android:orderInCategory="3"
-        android:id="@+id/ml_menu_equalizer"
-        android:icon="@drawable/ic_menu_equalizer"
-        android:title="@string/equalizer" />
     <item
         android:orderInCategory="3"
         android:id="@+id/ml_menu_custom_dir"

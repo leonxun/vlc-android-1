@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<resources xmlns:android="http://schemas.android.com/apk/res/android">
+<resources xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
     <style name="Theme.VLC" parent="Theme.VLC.7"/>
     <style name="Theme.VLC.7" parent="Theme.VLC.Apearance">
@@ -9,7 +9,7 @@
         <item name="drawerArrowStyle">@style/ActionBar.ArrowToggle</item>
     </style>
 
-    <style name="Theme.VLC.Apearance" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="Theme.VLC.Apearance" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="marginTopContent">50dp</item>
         <item name="toolbar_popup_style">@style/ThemeOverlay.AppCompat.Light</item>
 
@@ -70,7 +70,7 @@
         <item name="shadow_bottom_9patch">@drawable/shadow_bottom</item>
         <item name="gridview_progressbar">@drawable/gridview_progressbar</item>
         <item name="progress_mini_player">@drawable/progress_mini_player</item>
-        <item name="advanced_options_style">@style/Theme.AppCompat.Light.Dialog</item>
+        <item name="advanced_options_style">@style/Theme.MaterialComponents.Light.Dialog</item>
         <item name="rounded_bg">@drawable/rounded_corners_light</item>
         <item name="ic_playasaudio_off">@drawable/ic_playasaudio_off</item>
         <item name="ic_playasaudio_on">@drawable/ic_playasaudio_on</item>
@@ -84,9 +84,15 @@
         <item name="ic_audiodelay">@drawable/ic_audiodelay</item>
         <item name="ic_subtitledelay">@drawable/ic_subtitledelay</item>
         <item name="ic_passthrough">@drawable/ic_passthrough</item>
+        <item name="ic_abrepeat">@drawable/ic_abrepeat</item>
+        <item name="ic_abrepeat_seta">@drawable/ic_abrepeat_seta</item>
+        <item name="ic_abrepeat_setb">@drawable/ic_abrepeat_setb</item>
+        <item name="ic_abrepeat_reset">@drawable/ic_abrepeat_reset</item>
+        <item name="ic_dial">@drawable/ic_dial</item>
+        <item name="progress_background">@color/grey600transparent</item>
     </style>
 
-    <style name="Theme.VLC.PickerDialog" parent="Theme.AppCompat.Dialog">
+    <style name="Theme.VLC.PickerDialog" parent="Theme.MaterialComponents.Dialog">
         <item name="android:gridViewStyle">@style/Theme.VLC.List</item>
         <item name="background_default">@color/grey850</item>
         <item name="background_default_darker">@color/grey875</item>
@@ -106,7 +112,7 @@
         <item name="drawerArrowStyle">@style/ActionBar.ArrowToggle</item>
     </style>
 
-    <style name="Theme.VLC.Apearance.Black" parent="Theme.AppCompat.NoActionBar">
+    <style name="Theme.VLC.Apearance.Black" parent="Theme.MaterialComponents.NoActionBar">
         <item name="marginTopContent">50dp</item>
         <item name="toolbar_popup_style">@style/ThemeOverlay.AppCompat.Dark</item>
 
@@ -167,7 +173,7 @@
         <item name="shadow_bottom_9patch">@drawable/shadow_bottom_dark</item>
         <item name="gridview_progressbar">@drawable/gridview_progressbar_w</item>
         <item name="progress_mini_player">@drawable/progress_mini_player_dark</item>
-        <item name="advanced_options_style">@style/Theme.AppCompat.Dialog</item>
+        <item name="advanced_options_style">@style/Theme.MaterialComponents.Dialog</item>
         <item name="rounded_bg">@drawable/rounded_corners</item>
         <item name="ic_playasaudio_off">@drawable/ic_playasaudio_off_w</item>
         <item name="ic_playasaudio_on">@drawable/ic_playasaudio_on_w</item>
@@ -181,6 +187,12 @@
         <item name="ic_audiodelay">@drawable/ic_audiodelay_w</item>
         <item name="ic_subtitledelay">@drawable/ic_subtitledelay_w</item>
         <item name="ic_passthrough">@drawable/ic_passthrough_w</item>
+        <item name="ic_abrepeat">@drawable/ic_abrepeat_w</item>
+        <item name="ic_abrepeat_seta">@drawable/ic_abrepeat_seta_w</item>
+        <item name="ic_abrepeat_setb">@drawable/ic_abrepeat_setb_w</item>
+        <item name="ic_abrepeat_reset">@drawable/ic_abrepeat_reset_w</item>
+        <item name="ic_dial">@drawable/ic_dial_w</item>
+        <item name="progress_background">@color/grey400transparent</item>
     </style>
    <style name="Theme.VLC.TV" parent="Theme.Leanback">
        <item name="colorPrimary">@color/orange800</item>
@@ -206,7 +218,7 @@
    </style>
 
     <style name="Theme.VLC.Leanback.Preferences" parent="Theme.Leanback">
-        <item name="preferenceTheme">@style/PreferenceThemeOverlay</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlayLeanback</item>
     </style>
 
     <style name="Theme.VLC.List" parent="android:style/Widget.AbsListView">
@@ -215,7 +227,7 @@
         <item name="android:dividerHeight">0dp</item>
     </style>
 
-    <style name="Theme.VLC.NoTitleBar" parent="Theme.AppCompat.Light">
+    <style name="Theme.VLC.NoTitleBar" parent="Theme.MaterialComponents.Light">
         <item name="android:windowNoTitle">true</item>
         <item name="item_footer">@color/grey300</item>
         <item name="background_menu_divider">@color/grey400</item>
@@ -235,18 +247,20 @@
     </style>
 
     <style name="Theme.VLC.Player" parent="Theme.VLC.Player.7"/>
-    <style name="Theme.VLC.Player.7" parent="Theme.AppCompat">
+    <style name="Theme.VLC.Player.7" parent="Theme.MaterialComponents">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowBackground">@color/black</item>
         <item name="windowActionBarOverlay">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
 
         <item name="colorPrimary">@color/orange800</item>
         <item name="colorPrimaryDark">@color/transparent</item>
         <item name="colorAccent">@color/orange800</item>
 
+        <item name="background_default">@color/grey850</item>
         <item name="rounded_bg">@drawable/rounded_corners</item>
-        <item name="advanced_options_style">@style/Theme.AppCompat.Dialog</item>
+        <item name="advanced_options_style">@style/Theme.MaterialComponents.Dialog</item>
         <item name="ic_playasaudio_on">@drawable/ic_playasaudio_on_w</item>
         <item name="ic_popup_dim">@drawable/ic_popup_dim_w</item>
         <item name="ic_speed_normal_style">@drawable/ic_speed_w</item>
@@ -258,18 +272,27 @@
         <item name="ic_subtitledelay">@drawable/ic_subtitledelay_w</item>
         <item name="ic_passthrough">@drawable/ic_passthrough_w</item>
         <item name="ic_repeat">@drawable/ic_repeat_w</item>
+        <item name="ic_repeat_all">@drawable/ic_repeat_all</item>
+        <item name="ic_repeat_one">@drawable/ic_repeat_one</item>
         <item name="ic_shuffle">@drawable/ic_shuffle_w</item>
         <item name="ic_trash">@drawable/ic_trash_w</item>
         <item name="ic_reset">@drawable/ic_reset_w</item>
         <item name="ic_save">@drawable/ic_save_w</item>
+        <item name="font_default">@color/grey50</item>
         <item name="font_light">@color/grey600</item>
 
         <item name="list_subtitle">@color/grey400</item>
         <item name="list_title_last">@color/list_title_last</item>
         <item name="list_title">@color/bt_list_title</item>
+        <item name="progress_background">@color/grey400transparent</item>
+        <item name="ic_abrepeat">@drawable/ic_abrepeat_w</item>
+        <item name="ic_abrepeat_seta">@drawable/ic_abrepeat_seta_w</item>
+        <item name="ic_abrepeat_setb">@drawable/ic_abrepeat_setb_w</item>
+        <item name="ic_abrepeat_reset">@drawable/ic_abrepeat_reset_w</item>
+        <item name="ic_dial">@drawable/ic_dial_w</item>
     </style>
 
-    <style name="VLCTransparentTheme" parent="Theme.VLC">
+    <style name="VLCTransparentTheme" parent="Theme.AppCompat.Light.Dialog.MinWidth">
 
         <item name="android:background">@android:color/transparent</item>
         <item name="background">@android:color/transparent</item>
@@ -279,6 +302,8 @@
         <item name="android:windowContentOverlay">@android:color/transparent</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowAnimationStyle">@android:color/transparent</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
     </style>
 
     <style name="VLC.TextView" parent="android:Widget.TextView">
@@ -286,11 +311,11 @@
     </style>
 
     <style name="VLC.CtxTitle" parent="VLC.TextView">
-        <item name="android:layout_margin">12dp</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">18sp</item>
         <item name="android:textColor">?attr/list_title</item>
         <item name="android:maxLines">1</item>
         <item name="android:singleLine">true</item>
+        <item name="android:gravity">center_vertical</item>
     </style>
 
     <style name="VLC.TextViewTitle" parent="VLC.TextView">
@@ -336,14 +361,62 @@
     </style>
 
     <!--Preferences-->
-    <style name="VLCPreferenceTheme.Light" parent="PreferenceThemeOverlay.v14.Material">
+    <style name="VLCPreferenceTheme.Light" parent="PreferenceThemeOverlay">
         <item name="android:textColorPrimary">@color/grey900</item>
         <item name="android:textColorSecondary">@color/grey700</item>
+        <item name="preferenceStyle">@style/VLCPreferenceStyle</item>
+        <item name="editTextPreferenceStyle">@style/VLCEditPreferenceStyle</item>
+        <item name="switchPreferenceCompatStyle">@style/VLCSwitchPreferenceStyle</item>
+        <item name="dialogPreferenceStyle">@style/VLCDialogPreferenceStyle</item>
+        <item name="checkBoxPreferenceStyle">@style/VLCCheckBoxPreferenceStyle</item>
+        <item name="preferenceFragmentCompatStyle">@style/PreferenceFragment.Material</item>
+        <item name="preferenceCategoryStyle">@style/VLCPreferenceCategoryStyle</item>
+        <item name="preferenceScreenStyle">@style/VLCPreferenceScreenStyle</item>
     </style>
 
-    <style name="VLCPreferenceTheme.Dark" parent="PreferenceThemeOverlay.v14.Material">
+    <style name="VLCPreferenceTheme.Dark" parent="PreferenceThemeOverlay">
         <item name="android:textColorPrimary">@color/grey50</item>
         <item name="android:textColorSecondary">@color/grey600</item>
+        <item name="preferenceStyle">@style/VLCPreferenceStyle</item>
+        <item name="editTextPreferenceStyle">@style/VLCEditPreferenceStyle</item>
+        <item name="switchPreferenceCompatStyle">@style/VLCSwitchPreferenceStyle</item>
+        <item name="dialogPreferenceStyle">@style/VLCDialogPreferenceStyle</item>
+        <item name="checkBoxPreferenceStyle">@style/VLCCheckBoxPreferenceStyle</item>
+        <item name="preferenceFragmentCompatStyle">@style/PreferenceFragment.Material</item>
+        <item name="preferenceCategoryStyle">@style/VLCPreferenceCategoryStyle</item>
+        <item name="preferenceScreenStyle">@style/VLCPreferenceScreenStyle</item>
+    </style>
+
+    <style name="VLCEditPreferenceStyle" parent="Preference.DialogPreference.EditTextPreference.Material">
+    <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <style name="VLCSwitchPreferenceStyle" parent="Preference.SwitchPreferenceCompat.Material">
+    <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <style name="VLCDialogPreferenceStyle" parent="Preference.DialogPreference.Material">
+    <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <style name="VLCCheckBoxPreferenceStyle" parent="Preference.CheckBoxPreference.Material">
+    <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <style name="VLCPreferenceFragmentStyle" parent="PreferenceFragment.Material">
+    <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <style name="VLCPreferenceScreenStyle" parent="Preference.PreferenceScreen.Material">
+    <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <style name="VLCPreferenceStyle" parent="Preference.Material">
+    <item name="iconSpaceReserved">false</item>
+    </style>
+
+    <style name="VLCPreferenceCategoryStyle" parent="Preference.Category.Material">
+        <item name="iconSpaceReserved">false</item>
     </style>
 
     <!-- Tips Apearance-->

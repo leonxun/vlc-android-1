@@ -27,24 +27,17 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.constraint.ConstraintLayout;
-import android.support.constraint.ConstraintSet;
-import android.support.design.widget.FloatingActionButton;
-import android.support.transition.TransitionManager;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentActivity;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.view.ActionMode;
-import android.support.v7.widget.RecyclerView;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.Medialibrary;
 import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
+import org.videolan.medialibrary.media.Playlist;
 import org.videolan.vlc.R;
 import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.gui.AudioPlayerContainerActivity;
@@ -53,27 +46,38 @@ import org.videolan.vlc.gui.InfoActivity;
 import org.videolan.vlc.gui.audio.BaseAudioBrowser;
 import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.gui.helpers.hf.WriteExternalDelegate;
-import org.videolan.vlc.gui.video.VideoGridFragment;
 import org.videolan.vlc.gui.view.SwipeRefreshLayout;
 import org.videolan.vlc.interfaces.Filterable;
+import org.videolan.vlc.media.MediaUtils;
 import org.videolan.vlc.util.AndroidDevices;
 import org.videolan.vlc.util.FileUtils;
 import org.videolan.vlc.util.Permissions;
 import org.videolan.vlc.util.WorkersKt;
-import org.videolan.vlc.viewmodels.BaseModel;
+import org.videolan.vlc.viewmodels.SortableModel;
 
 import java.util.LinkedList;
 
-public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment implements android.support.v7.view.ActionMode.Callback, Filterable {
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.view.ActionMode;
+import androidx.constraintlayout.widget.ConstraintLayout;
+import androidx.constraintlayout.widget.ConstraintSet;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.transition.TransitionManager;
+
+public abstract class MediaBrowserFragment<T extends SortableModel> extends Fragment implements ActionMode.Callback, Filterable {
 
     public final static String TAG = "VLC/MediaBrowserFragment";
 
-    private View mSearchButtonView;
+    protected View mSearchButtonView;
     protected SwipeRefreshLayout mSwipeRefreshLayout;
     protected Medialibrary mMediaLibrary;
     protected ActionMode mActionMode;
     public FloatingActionButton mFabPlay;
     protected T viewModel;
+    private boolean restart = false;
 
     public T getViewModel() {
         return viewModel;
@@ -89,11 +93,16 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
     @Override
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        restart = false;
         mSearchButtonView = view.findViewById(R.id.searchButton);
         mSwipeRefreshLayout = view.findViewById(R.id.swipeLayout);
-        if (mSwipeRefreshLayout != null) mSwipeRefreshLayout.setColorSchemeResources(R.color.orange700);
-            mFabPlay = getActivity().findViewById(R.id.fab);
+        mSwipeRefreshLayout.setColorSchemeResources(R.color.orange700);
+        if (hasFAB()) mFabPlay = requireActivity().findViewById(R.id.fab);
         setBreadcrumb();
+    }
+
+    protected boolean hasFAB() {
+        return mSwipeRefreshLayout != null;
     }
 
     protected void setBreadcrumb() {
@@ -101,6 +110,7 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
         if (ariane != null) ariane.setVisibility(View.GONE);
     }
 
+    @Override
     public void onStart() {
         super.onStart();
         updateActionBar();
@@ -113,6 +123,16 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
                 }
             });
         }
+        if (restart) onRestart();
+    }
+
+    protected void onRestart() {}
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        setFabPlayVisibility(false);
+        restart = true;
     }
 
     public void updateActionBar() {
@@ -133,7 +153,10 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
     }
 
     public void setFabPlayVisibility(boolean enable) {
-        if (mFabPlay != null) mFabPlay.setVisibility(enable ? View.VISIBLE : View.GONE);
+        if (mFabPlay != null) {
+            if (enable) mFabPlay.show();
+            else mFabPlay.hide();
+        }
     }
 
     public void onFabPlayClick(View view) {}
@@ -144,8 +167,36 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
     protected String getSubTitle() { return null; }
     public void clear() {}
 
+    protected boolean removeItem(final MediaLibraryItem item) {
+        final View view = getView();
+        if (view == null) return false;
+        if (item.getItemType() == MediaLibraryItem.TYPE_PLAYLIST) {
+            UiTools.snackerConfirm(getView(), getString(R.string.confirm_delete_playlist, item.getTitle()), new Runnable() {
+                @Override
+                public void run() {
+                    MediaUtils.INSTANCE.deletePlaylist((Playlist) item);
+                }
+            });
+        } else if (item.getItemType() == MediaLibraryItem.TYPE_MEDIA) {
+            final Runnable deleteAction = new Runnable() {
+                @Override
+                public void run() {
+                    deleteMedia(item, false, null);
+                }
+            };
+            final int resid = ((MediaWrapper)item).getType() == MediaWrapper.TYPE_DIR ? R.string.confirm_delete_folder : R.string.confirm_delete;
+            UiTools.snackerConfirm(getView(), getString(resid, item.getTitle()), new Runnable() {
+                @Override
+                public void run() {
+                    if (checkWritePermission((MediaWrapper) item, deleteAction)) deleteAction.run();
+                }
+            });
+        } else return false;
+        return true;
+    }
+
     protected void deleteMedia(final MediaLibraryItem mw, final boolean refresh, final Runnable failCB) {
-        WorkersKt.runBackground(new Runnable() {
+        WorkersKt.runIO(new Runnable() {
             @Override
             public void run() {
                 final LinkedList<String> foldersToReload = new LinkedList<>();
@@ -169,8 +220,6 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
                                 if (failCB != null) failCB.run();
                                 return;
                             }
-                            // TODO
-//                            if (mService != null) for (String path : mediaPaths) mService.removeLocation(path);
                             if (refresh) onRefresh();
                         }
                     });
@@ -214,7 +263,8 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
         menu.findItem(R.id.ml_menu_sortby_artist_name).setVisible(getViewModel().canSortByArtist());
         menu.findItem(R.id.ml_menu_sortby_album_name).setVisible(getViewModel().canSortByAlbum());
         menu.findItem(R.id.ml_menu_sortby_length).setVisible(getViewModel().canSortByDuration());
-        menu.findItem(R.id.ml_menu_sortby_date).setVisible(getViewModel().canSortByReleaseDate() || getViewModel().canSortByLastModified());
+        menu.findItem(R.id.ml_menu_sortby_date).setVisible(getViewModel().canSortByReleaseDate());
+        menu.findItem(R.id.ml_menu_sortby_last_modified).setVisible(getViewModel().canSortByLastModified());
         menu.findItem(R.id.ml_menu_sortby_number).setVisible(false);
         UiTools.updateSortTitles(this);
     }
@@ -232,7 +282,10 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
                 sortBy(Medialibrary.SORT_DURATION);
                 return true;
             case R.id.ml_menu_sortby_date:
-                sortBy(this instanceof VideoGridFragment ? Medialibrary.SORT_LASTMODIFICATIONDATE : Medialibrary.SORT_RELEASEDATE);
+                sortBy(Medialibrary.SORT_RELEASEDATE);
+                return true;
+            case R.id.ml_menu_sortby_last_modified:
+                sortBy(Medialibrary.SORT_LASTMODIFICATIONDATE);
                 return true;
             case R.id.ml_menu_sortby_artist_name:
                 sortBy(Medialibrary.SORT_ARTIST);
@@ -248,13 +301,7 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
     }
 
     protected void sortBy(int sort) {
-        final T provider = getViewModel();
-        provider.sort(sort);
-        final String key = provider.getKey();
-        VLCApplication.getSettings().edit()
-                .putInt(key, sort)
-                .putBoolean(key+"_desc", provider.getDesc())
-                .apply();
+        getViewModel().sort(sort);
     }
 
     public Menu getMenu() {
@@ -294,6 +341,7 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
         getViewModel().filter(query);
     }
 
+    @Override
     public void restoreList() {
         getViewModel().restore();
     }
@@ -301,6 +349,11 @@ public abstract class MediaBrowserFragment<T extends BaseModel> extends Fragment
     @Override
     public boolean enableSearchOption() {
         return true;
+    }
+
+    @Override
+    public String getFilterQuery() {
+        return getViewModel().getFilterQuery();
     }
 
     @Override

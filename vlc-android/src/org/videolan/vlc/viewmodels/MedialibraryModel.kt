@@ -20,33 +20,39 @@
 
 package org.videolan.vlc.viewmodels
 
+import android.content.Context
+import kotlinx.coroutines.launch
 import org.videolan.medialibrary.Medialibrary
-import org.videolan.medialibrary.interfaces.MediaAddedCb
-import org.videolan.medialibrary.interfaces.MediaUpdatedCb
 import org.videolan.medialibrary.media.MediaLibraryItem
-import org.videolan.vlc.util.EmptyMLCallbacks
-import org.videolan.vlc.util.uiJob
 
 
-abstract class MedialibraryModel<T : MediaLibraryItem> : BaseModel<T>(), Medialibrary.OnMedialibraryReadyListener, MediaUpdatedCb by EmptyMLCallbacks, MediaAddedCb by EmptyMLCallbacks {
+abstract class MedialibraryModel<T : MediaLibraryItem>(context: Context) : BaseModel<T>(context), Medialibrary.OnMedialibraryReadyListener, Medialibrary.OnDeviceChangeListener {
 
     val medialibrary = Medialibrary.getInstance()
 
-    override fun fetch() {
-        medialibrary.addOnMedialibraryReadyListener(this)
-        if (medialibrary.isStarted) onMedialibraryReady()
+    init {
+        medialibrary.apply {
+            addOnMedialibraryReadyListener(this@MedialibraryModel)
+            medialibrary.addOnDeviceChangeListener(this@MedialibraryModel)
+            if (isStarted) refresh()
+        }
     }
 
     override fun onMedialibraryReady() {
-        uiJob { refresh() }
+        launch { refresh() }
     }
 
     override fun onMedialibraryIdle() {
-        uiJob { refresh() }
+        launch { refresh() }
+    }
+
+    override fun onDeviceChange() {
+        launch { refresh() }
     }
 
     override fun onCleared() {
-        super.onCleared()
         medialibrary.removeOnMedialibraryReadyListener(this)
+        medialibrary.removeOnDeviceChangeListener(this)
+        super.onCleared()
     }
 }

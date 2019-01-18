@@ -26,8 +26,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.text.TextUtils;
 import android.widget.Toast;
 
@@ -177,19 +177,6 @@ public class Util {
         if (hasArtist && hasAlbum) contentBuilder.append(" - ");
         if (hasAlbum) contentBuilder.append(album);
         return contentBuilder.toString();
-    }
-
-    /**
-     * Starts a service in Foreground in Android 8+
-     * To be removed with AppCompat 26+
-     * @param ctx the context
-     * @param intent service intent to start
-     */
-    public static void startService(Context ctx, Intent intent) {
-        if (!AndroidUtil.isOOrLater || VLCApplication.isForeground())
-            ctx.startService(intent);
-        else
-            ctx.startForegroundService(intent);
     }
 
     public static boolean byPassChromecastDialog(Dialog.QuestionDialog dialog) {

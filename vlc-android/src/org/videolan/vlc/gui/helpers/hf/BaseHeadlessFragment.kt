@@ -23,46 +23,29 @@
 
 package org.videolan.vlc.gui.helpers.hf
 
-import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.Handler
-import android.support.v4.app.Fragment
-import android.support.v4.app.FragmentActivity
+import androidx.fragment.app.Fragment
+import kotlinx.coroutines.CompletableDeferred
 
 open class BaseHeadlessFragment : Fragment() {
-    protected var mActivity: FragmentActivity? = null
+    protected val deferredGrant = CompletableDeferred<Boolean>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         retainInstance = true
     }
 
-    override fun onAttach(context: Context?) {
-        super.onAttach(context)
-        if (context is FragmentActivity) mActivity = context
-    }
-
-    override fun onDetach() {
-        super.onDetach()
-        mActivity = null
-    }
-
     protected fun exit() {
-        if (mActivity?.isFinishing == false) mActivity!!.supportFragmentManager.beginTransaction().remove(this).commitAllowingStateLoss()
-    }
-
-    companion object {
-        internal var callback: Runnable? = null
-
-        internal fun executeCallback() {
-            callback?.let {
-                try {
-                    Handler().postDelayed(it, 500);
-                } catch (ignored: Exception) {
-                } finally {
-                    callback = null
-                }
-            }
+        activity?.run {
+            if (!isFinishing) supportFragmentManager
+                .beginTransaction()
+                .remove(this@BaseHeadlessFragment)
+                .commitAllowingStateLoss()
         }
     }
+
+    suspend fun awaitGrant() = deferredGrant.await()
+
+    protected fun IntArray.isGranted() = isNotEmpty() && get(0) == PackageManager.PERMISSION_GRANTED
 }

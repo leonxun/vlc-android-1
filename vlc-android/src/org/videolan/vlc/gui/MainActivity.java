@@ -25,27 +25,18 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.database.Cursor;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.design.widget.NavigationView;
-import android.support.v4.app.Fragment;
-import android.support.v4.view.GravityCompat;
-import android.support.v7.app.ActionBar;
-import android.support.v7.app.ActionBarDrawerToggle;
-import android.support.v7.view.ActionMode;
-import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.MenuItem;
-import android.widget.FilterQueryProvider;
+
+import com.google.android.material.navigation.NavigationView;
 
 import org.videolan.libvlc.util.AndroidUtil;
 import org.videolan.medialibrary.Medialibrary;
 import org.videolan.vlc.BuildConfig;
-import org.videolan.vlc.MediaParsingService;
+import org.videolan.vlc.MediaParsingServiceKt;
 import org.videolan.vlc.R;
 import org.videolan.vlc.StartActivity;
 import org.videolan.vlc.VLCApplication;
@@ -70,7 +61,15 @@ import org.videolan.vlc.util.Util;
 
 import java.util.List;
 
-public class MainActivity extends ContentActivity implements FilterQueryProvider, ExtensionManagerService.ExtensionManagerActivity {
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.appcompat.view.ActionMode;
+import androidx.core.view.GravityCompat;
+import androidx.fragment.app.Fragment;
+
+public class MainActivity extends ContentActivity implements ExtensionManagerService.ExtensionManagerActivity {
     public final static String TAG = "VLC/MainActivity";
 
     private Medialibrary mMediaLibrary;
@@ -90,28 +89,27 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Util.checkCpuCompatibility(this);
-        Permissions.checkReadStoragePermission(this, false);
+        if (savedInstanceState == null) Permissions.checkReadStoragePermission(this, false);
         /*** Start initializing the UI ***/
         setContentView(R.layout.main);
         mDrawerLayout = findViewById(R.id.root_container);
         setupNavigationView();
         initAudioPlayerContainerActivity();
-        mNavigator = new Navigator(this, mSettings, mExtensionManagerService, savedInstanceState);
+        mNavigator = new Navigator(this, mSettings, mExtensionManagerService, savedInstanceState, getIntent().getIntExtra(Constants.EXTRA_TARGET, 0));
         if (savedInstanceState == null) {
             if (getIntent().getBooleanExtra(Constants.EXTRA_UPGRADE, false)) {
-            /*
-             * The sliding menu is automatically opened when the user closes
-             * the info dialog. If (for any reason) the dialog is not shown,
-             * open the menu after a short delay.
-             */
-            mActivityHandler.postDelayed(new Runnable() {
+                /*
+                 * The sliding menu is automatically opened when the user closes
+                 * the info dialog. If (for any reason) the dialog is not shown,
+                 * open the menu after a short delay.
+                 */
+                mActivityHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         mDrawerLayout.openDrawer(mNavigationView);
                     }
                 }, 500);
             }
-            mNavigator.reloadPreferences();
         }
 
         /* Set up the action bar */
@@ -129,10 +127,6 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
 
     private void setupNavigationView() {
         mNavigationView = findViewById(R.id.navigation);
-        if (TextUtils.equals(BuildConfig.FLAVOR_target, "chrome")) {
-            MenuItem item = mNavigationView.getMenu().findItem(R.id.nav_directories);
-            item.setTitle(R.string.open);
-        }
         mNavigationView.getMenu().findItem(R.id.nav_history).setVisible(mSettings.getBoolean(PreferencesFragment.PLAYBACK_HISTORY, true));
     }
 
@@ -155,12 +149,15 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
         super.onStart();
         if (mMediaLibrary.isInitiated()) {
             /* Load media items from database and storage */
-            if (mScanNeeded && Permissions.canReadStorage(this))
-                startService(new Intent(Constants.ACTION_RELOAD, null,this, MediaParsingService.class));
+            if (mScanNeeded && Permissions.canReadStorage(this)) MediaParsingServiceKt.reload(this);
         }
-        mNavigationView.setNavigationItemSelectedListener(mNavigator);
-        if (BuildConfig.DEBUG)
-            createExtensionServiceConnection();
+        if (BuildConfig.DEBUG) createExtensionServiceConnection();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateNavMenu();
     }
 
     @Override
@@ -179,6 +176,20 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
             mSettings.edit()
                     .putString("current_extension_name", mExtensionsManager.getExtensions(getApplication(), false).get(mNavigator.getCurrentFragmentId()).componentName().getPackageName())
                     .apply();
+    }
+
+    private void updateNavMenu() {
+        mNavigationView.setNavigationItemSelectedListener(mNavigator);
+        final boolean wasVisible = mNavigationView.getMenu().findItem(R.id.nav_video).isVisible();
+        final boolean scan = mSettings.getInt(Constants.KEY_MEDIALIBRARY_SCAN, Constants.ML_SCAN_OFF) == Constants.ML_SCAN_ON;
+        if (wasVisible != scan) mActivityHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                mNavigationView.getMenu().findItem(R.id.nav_audio).setVisible(scan);
+                mNavigationView.getMenu().findItem(R.id.nav_video).setVisible(scan);
+                if (scan) getNavigator().showFragment(R.id.nav_video);
+            }
+        });
     }
 
     public boolean isExtensionServiceBinded() {
@@ -234,6 +245,7 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
             mExtensionServiceConnection = null;
     }
 
+    @Override
     protected void onSaveInstanceState(Bundle outState) {
         final Fragment current = mNavigator.getCurrentFragment();
         if (!(current instanceof ExtensionBrowser)) getSupportFragmentManager().putFragment(outState, "current_fragment", current);
@@ -257,7 +269,7 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
         }
 
         /* Close playlist search if open or Slide down the audio player if it is shown entirely. */
-        if (isAudioPlayerReady() && (mAudioPlayer.clearSearch() || slideDownAudioPlayer()))
+        if (isAudioPlayerReady() && (mAudioPlayer.backPressed() || slideDownAudioPlayer()))
             return;
 
         // If it's the directory view, a "backpressed" action shows a parent.
@@ -320,7 +332,7 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
             if(current != null && current instanceof IRefreshable)
                 ((IRefreshable) current).refresh();
             else
-                startService(new Intent(Constants.ACTION_RELOAD, null,this, MediaParsingService.class));
+                MediaParsingServiceKt.rescan(this);
         }
     }
 
@@ -330,7 +342,7 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
         if (requestCode == Constants.ACTIVITY_RESULT_PREFERENCES) {
             switch (resultCode) {
                 case PreferencesActivity.RESULT_RESCAN:
-                    startService(new Intent(Constants.ACTION_RELOAD, null,this, MediaParsingService.class));
+                    MediaParsingServiceKt.reload(this);
                     break;
                 case PreferencesActivity.RESULT_RESTART:
                 case PreferencesActivity.RESULT_RESTART_APP:
@@ -348,7 +360,7 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
                     if (fragment instanceof AudioBrowserFragment) ((AudioBrowserFragment) fragment).updateArtists();
             }
         } else if (requestCode == Constants.ACTIVITY_RESULT_OPEN && resultCode == RESULT_OK){
-            MediaUtils.openUri(this, data.getData());
+            MediaUtils.INSTANCE.openUri(this, data.getData());
         } else if (requestCode == Constants.ACTIVITY_RESULT_SECONDARY) {
             if (resultCode == PreferencesActivity.RESULT_RESCAN) {
                 forceRefresh(getCurrentFragment());
@@ -384,17 +396,6 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
         return super.onKeyUp(keyCode, event);
     }
 
-    @Override
-    public Cursor runQuery(final CharSequence constraint) {
-        return null;
-    }
-
-    //Filtering
-    @Override
-    public boolean onQueryTextSubmit(String query) {
-        return false;
-    }
-
     public void closeDrawer() {
         mDrawerLayout.closeDrawer(mNavigationView);
     }
@@ -407,10 +408,11 @@ public class MainActivity extends ContentActivity implements FilterQueryProvider
                 return;
             default:
                 final int currentId = mNavigator.getCurrentFragmentId();
-                if (id != currentId && mNavigationView.getMenu().findItem(id) != null) {
-                    if (mNavigationView.getMenu().findItem(currentId) != null)
-                        mNavigationView.getMenu().findItem(currentId).setChecked(false);
-                    mNavigationView.getMenu().findItem(id).setChecked(true);
+                final MenuItem target = mNavigationView.getMenu().findItem(id);
+                if (id != currentId && target != null) {
+                    final MenuItem current = mNavigationView.getMenu().findItem(currentId);
+                    if (current != null) current.setChecked(false);
+                    target.setChecked(true);
                     /* Save the tab status in pref */
                     mSettings.edit().putInt("fragment_id", id).apply();
                 }

@@ -28,6 +28,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import org.videolan.vlc.R;
+import org.videolan.vlc.gui.helpers.PlayerOptionsDelegateKt;
 
 import java.util.Calendar;
 
@@ -52,6 +53,7 @@ public class SleepTimerDialog extends PickTimeFragment {
     }
 
 
+    @Override
     protected void executeAction() {
         long hours = !mHours.equals("") ? Long.parseLong(mHours) * HOURS_IN_MICROS : 0l;
         long minutes = !mMinutes.equals("") ? Long.parseLong(mMinutes) * MINUTES_IN_MICROS : 0l;
@@ -61,7 +63,7 @@ public class SleepTimerDialog extends PickTimeFragment {
             Calendar sleepTime = Calendar.getInstance();
             sleepTime.setTimeInMillis(sleepTime.getTimeInMillis() + interval);
             sleepTime.set(Calendar.SECOND, 0);
-            AdvOptionsDialog.setSleep(sleepTime);
+            PlayerOptionsDelegateKt.setSleep(sleepTime);
         }
 
         dismiss();

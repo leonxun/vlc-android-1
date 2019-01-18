@@ -29,7 +29,7 @@ import android.content.Context;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.os.Build;
-import android.support.v4.view.GestureDetectorCompat;
+import androidx.core.view.GestureDetectorCompat;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -116,8 +116,8 @@ public class PopupLayout extends RelativeLayout implements ScaleGestureDetector.
     private void init(Context context) {
         mWindowManager = (WindowManager) context.getApplicationContext().getSystemService(Context.WINDOW_SERVICE);
 
-        mPopupWidth = VLCApplication.getAppResources().getDimensionPixelSize(R.dimen.video_pip_width);
-        mPopupHeight = VLCApplication.getAppResources().getDimensionPixelSize(R.dimen.video_pip_heigth);
+        mPopupWidth = context.getResources().getDimensionPixelSize(R.dimen.video_pip_width);
+        mPopupHeight = context.getResources().getDimensionPixelSize(R.dimen.video_pip_heigth);
         final WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 mPopupWidth,
                 mPopupHeight,

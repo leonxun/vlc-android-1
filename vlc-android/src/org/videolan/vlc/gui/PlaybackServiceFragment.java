@@ -23,7 +23,7 @@
 package org.videolan.vlc.gui;
 
 import android.app.Activity;
-import android.support.v4.app.Fragment;
+import androidx.fragment.app.Fragment;
 
 import org.videolan.vlc.PlaybackService;
 import org.videolan.vlc.gui.video.VideoPlayerActivity;
@@ -69,6 +69,7 @@ public abstract class PlaybackServiceFragment extends Fragment implements Playba
         unregisterPlaybackService(fragment.getActivity(), cb);
     }
 
+    @Override
     public void onStart(){
         super.onStart();
         registerPlaybackService(this, this);

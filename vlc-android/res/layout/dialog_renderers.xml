@@ -8,7 +8,7 @@
             name="holder"
             type="org.videolan.vlc.gui.dialogs.RenderersDialog.RendererClickhandler" />
     </data>
-    <android.support.constraint.ConstraintLayout
+    <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:minWidth="384dp">
@@ -20,7 +20,7 @@
             android:text="@string/renderer_list_title"
             android:textAppearance="@style/TextAppearance.AppCompat.Title"
             android:padding="16dp" />
-        <android.support.v7.widget.RecyclerView
+        <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/renderers_list"
             android:layout_width="0dp"
             android:layout_height="0dp"
@@ -32,16 +32,16 @@
             tools:listitem="@layout/item_renderer"/>
         <Button
             android:id="@+id/renderers_disconnect"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
             app:layout_constraintRight_toRightOf="parent"
             app:layout_constraintLeft_toLeftOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"
+            style="@style/Widget.MaterialComponents.Button.TextButton.Dialog"
             android:text="@string/renderers_disconnect"
-            tools:targetApi="11"
-            style="?android:attr/borderlessButtonStyle"
-            android:textColor="@color/orange800"
             android:textAppearance="@style/TextAppearance.AppCompat.Medium"
             android:onClick="@{() -> holder.connect((RendererItem)null)}" />
-    </android.support.constraint.ConstraintLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
 </layout>

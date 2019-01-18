@@ -24,22 +24,23 @@
 package org.videolan.vlc.gui;
 
 import android.annotation.TargetApi;
-import android.arch.lifecycle.Observer;
-import android.arch.lifecycle.ViewModelProviders;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProviders;
+import androidx.paging.PagedList;
 import android.content.Intent;
-import android.databinding.DataBindingUtil;
+import androidx.databinding.DataBindingUtil;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.design.widget.BottomSheetBehavior;
-import android.support.design.widget.CoordinatorLayout;
-import android.support.v4.view.ViewCompat;
-import android.support.v7.view.ActionMode;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
+import androidx.annotation.Nullable;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+import androidx.core.view.ViewCompat;
+import androidx.appcompat.view.ActionMode;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.Menu;
@@ -69,7 +70,8 @@ import org.videolan.vlc.util.AndroidDevices;
 import org.videolan.vlc.util.Constants;
 import org.videolan.vlc.util.FileUtils;
 import org.videolan.vlc.util.WorkersKt;
-import org.videolan.vlc.viewmodels.audio.TracksModel;
+import org.videolan.vlc.viewmodels.paged.MLPagedModel;
+import org.videolan.vlc.viewmodels.paged.PagedTracksModel;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -87,7 +89,7 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
     private PlaylistActivityBinding mBinding;
     private ActionMode mActionMode;
     private boolean mIsPlaylist;
-    private TracksModel tracksModel;
+    private PagedTracksModel tracksModel;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -96,7 +98,7 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
         mBinding = DataBindingUtil.setContentView(this, R.layout.playlist_activity);
 
         initAudioPlayerContainerActivity();
-        mFragmentContainer = findViewById(R.id.container_list);
+        mFragmentContainer = mBinding.songs;
         mOriginalBottomPadding = mFragmentContainer.getPaddingBottom();
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
@@ -105,21 +107,24 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
                 getIntent().getParcelableExtra(AudioBrowserFragment.TAG_ITEM));
         mIsPlaylist = mPlaylist.getItemType() == MediaLibraryItem.TYPE_PLAYLIST;
         mBinding.setPlaylist(mPlaylist);
-        mAdapter = new AudioBrowserAdapter(MediaLibraryItem.TYPE_MEDIA, this);
+        mAdapter = new AudioBrowserAdapter(MediaLibraryItem.TYPE_MEDIA, this, -1);
 
         mBinding.songs.setLayoutManager(new LinearLayoutManager(this));
         mBinding.songs.setAdapter(mAdapter);
-        tracksModel = ViewModelProviders.of(this, new TracksModel.Factory(mPlaylist)).get(TracksModel.class);
-        tracksModel.getDataset().observe(this, new Observer<List<MediaLibraryItem>>() {
+        tracksModel = ViewModelProviders.of(this, new PagedTracksModel.Factory(this, mPlaylist)).get(PagedTracksModel.class);
+        ((MLPagedModel)tracksModel).getPagedList().observe(this, new Observer<PagedList<MediaLibraryItem>>() {
             @Override
-            public void onChanged(@Nullable List<MediaLibraryItem> tracks) {
-                if (tracks != null) mAdapter.update(tracks);
+            public void onChanged(@Nullable PagedList<MediaLibraryItem> tracks) {
+                if (tracks != null) {
+                    if (tracks.isEmpty() && !tracksModel.isFiltering()) finish();
+                    else mAdapter.submitList(tracks);
+                }
             }
         });
         final int fabVisibility =  savedInstanceState != null ? savedInstanceState.getInt(TAG_FAB_VISIBILITY) : -1;
 
         if (!TextUtils.isEmpty(mPlaylist.getArtworkMrl())) {
-            WorkersKt.runBackground(new Runnable() {
+            WorkersKt.runIO(new Runnable() {
                 @Override
                 public void run() {
                     final Bitmap cover = AudioUtil.readCoverBitmap(Uri.decode(mPlaylist.getArtworkMrl()), 0);
@@ -141,8 +146,7 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
                     });
                 }
             });
-        } else
-            fabFallback();
+        } else fabFallback();
         mBinding.fab.setOnClickListener(this);
     }
 
@@ -150,18 +154,12 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
         mBinding.appbar.setExpanded(false);
         ViewCompat.setNestedScrollingEnabled(mBinding.songs, false);
         final CoordinatorLayout.LayoutParams lp = (CoordinatorLayout.LayoutParams) mBinding.fab.getLayoutParams();
-        lp.setAnchorId(R.id.container_list);
+        lp.setAnchorId(R.id.songs);
         lp.anchorGravity = Gravity.BOTTOM|Gravity.RIGHT|Gravity.END;
         lp.bottomMargin = getResources().getDimensionPixelSize(R.dimen.default_margin);
         lp.setBehavior(new FloatingActionButtonBehavior(PlaylistActivity.this, null));
         mBinding.fab.setLayoutParams(lp);
         mBinding.fab.setVisibility(View.VISIBLE);
-    }
-
-    @Override
-    protected void onPostCreate(@Nullable Bundle savedInstanceState) {
-        mFragmentContainer = mBinding.songs;
-        super.onPostCreate(savedInstanceState);
     }
 
     @Override
@@ -180,26 +178,22 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
     @Override
     public void onClick(View v, int position, MediaLibraryItem item) {
         if (mActionMode != null) {
-            item.toggleStateFlag(MediaLibraryItem.FLAG_SELECTED);
-            mAdapter.updateSelectionCount(item.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
-            mAdapter.notifyItemChanged(position, item);
+            mAdapter.getMultiSelectHelper().toggleSelection(position);
             invalidateActionMode();
-        } else MediaUtils.openArray(this, mPlaylist.getTracks(), position);
+        } else MediaUtils.INSTANCE.playTracks(this, mPlaylist, position);
     }
 
     @Override
     public boolean onLongClick(View v, int position, MediaLibraryItem item) {
         if (mActionMode != null) return false;
-        item.toggleStateFlag(MediaLibraryItem.FLAG_SELECTED);
-        mAdapter.updateSelectionCount(item.hasStateFlags(MediaLibraryItem.FLAG_SELECTED));
-        mAdapter.notifyItemChanged(position, item);
+        mAdapter.getMultiSelectHelper().toggleSelection(position);
         startActionMode();
         return true;
     }
 
     @Override
     public void onCtxClick(View anchor, final int position, final MediaLibraryItem mediaItem) {
-        if (mActionMode == null) ContextSheetKt.showContext(this, this, position, mediaItem.getTitle(), Constants.CTX_PLAYLIST_FLAGS);
+        if (mActionMode == null) ContextSheetKt.showContext(this, this, position, mediaItem.getTitle(), Constants.CTX_PLAYLIST_ITEM_FLAGS);
     }
 
     @Override
@@ -239,12 +233,12 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
 
     @Override
     public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
-        int count = mAdapter.getSelectionCount();
+        final int count = mAdapter.getMultiSelectHelper().getSelectionCount();
         if (count == 0) {
             stopActionMode();
             return false;
         }
-        boolean isSong = count == 1 && mAdapter.getSelection().get(0).getItemType() == MediaLibraryItem.TYPE_MEDIA;
+        boolean isSong = count == 1 && mAdapter.getMultiSelectHelper().getSelection().get(0).getItemType() == MediaLibraryItem.TYPE_MEDIA;
         //menu.findItem(R.id.action_mode_audio_playlist_up).setVisible(isSong && mIsPlaylist);
         //menu.findItem(R.id.action_mode_audio_playlist_down).setVisible(isSong && mIsPlaylist);
         menu.findItem(R.id.action_mode_audio_set_song).setVisible(isSong && AndroidDevices.isPhone && !mIsPlaylist);
@@ -256,8 +250,8 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
 
     @Override
     public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
-        List<MediaLibraryItem> list = mAdapter.getSelection();
-        List<MediaWrapper> tracks = new ArrayList<>();
+        final List<MediaLibraryItem> list = mAdapter.getMultiSelectHelper().getSelection();
+        final List<MediaWrapper> tracks = new ArrayList<>();
         for (MediaLibraryItem mediaItem : list)
             tracks.addAll(Arrays.asList(mediaItem.getTracks()));
 
@@ -274,10 +268,10 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
         stopActionMode();
         switch (item.getItemId()) {
             case R.id.action_mode_audio_play:
-                MediaUtils.openList(this, tracks, 0);
+                MediaUtils.INSTANCE.openList(this, tracks, 0);
                 break;
             case R.id.action_mode_audio_append:
-                MediaUtils.appendMedia(this, tracks);
+                MediaUtils.INSTANCE.appendMedia(this, tracks);
                 break;
             case R.id.action_mode_audio_add_playlist:
                 UiTools.addToPlaylist(this, tracks);
@@ -300,16 +294,7 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
     @Override
     public void onDestroyActionMode(ActionMode mode) {
         mActionMode = null;
-        List<MediaLibraryItem> items = mAdapter.getAll();
-        if (items != null) {
-            for (int i = 0; i < items.size(); ++i) {
-                if (items.get(i).hasStateFlags(MediaLibraryItem.FLAG_SELECTED)) {
-                    items.get(i).removeStateFlags(MediaLibraryItem.FLAG_SELECTED);
-                    mAdapter.notifyItemChanged(i, items.get(i));
-                }
-            }
-        }
-        mAdapter.resetSelectionCount();
+        mAdapter.getMultiSelectHelper().clearSelection();
     }
 
     protected void showInfoDialog(MediaWrapper media) {
@@ -328,39 +313,33 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
                 showInfoDialog(media);
                 break;
             case Constants.CTX_DELETE:
-                tracksModel.remove(media);
-                final Runnable cancel = new Runnable() {
-                    @Override
-                    public void run() {
-                        tracksModel.refresh();
-                    }
-                };
-                UiTools.snackerWithCancel(mBinding.getRoot(), getString(R.string.file_deleted), new Runnable() {
+                final int resId = mIsPlaylist ? R.string.confirm_remove_from_playlist : R.string.confirm_delete;
+                UiTools.snackerConfirm(mBinding.getRoot(), getString(resId, media.getTitle()), new Runnable() {
                     @Override
                     public void run() {
                         if (mIsPlaylist) ((Playlist) mPlaylist).remove(media.getId());
-                        else deleteMedia(media, cancel);
+                        else deleteMedia(media);
                     }
-                }, cancel);
+                });
                 break;
             case Constants.CTX_APPEND:
-                MediaUtils.appendMedia(this, media.getTracks());
+                MediaUtils.INSTANCE.appendMedia(this, media.getTracks());
                 break;
             case Constants.CTX_PLAY_NEXT:
-                MediaUtils.insertNext(this, media.getTracks());
+                MediaUtils.INSTANCE.insertNext(this, media.getTracks());
                 break;
             case Constants.CTX_ADD_TO_PLAYLIST:
                 UiTools.addToPlaylist(this, media.getTracks(), SavePlaylistDialog.KEY_NEW_TRACKS);
                 break;
             case Constants.CTX_SET_RINGTONE:
-                AudioUtil.setRingtone((MediaWrapper) media, this);
+                AudioUtil.setRingtone(media, this);
                 break;
         }
 
     }
 
-    protected void deleteMedia(final MediaLibraryItem mw, final Runnable cancel) {
-        WorkersKt.runBackground(new Runnable() {
+    protected void deleteMedia(final MediaLibraryItem mw) {
+        WorkersKt.runIO(new Runnable() {
             @Override
             public void run() {
                 final LinkedList<String> foldersToReload = new LinkedList<>();
@@ -373,42 +352,21 @@ public class PlaylistActivity extends AudioPlayerContainerActivity implements IE
                         mediaPaths.add(media.getLocation());
                     } else UiTools.snacker(mBinding.getRoot(), getString(R.string.msg_delete_failed, media.getTitle()));
                 }
-                for (String folder : foldersToReload)
-                    mMediaLibrary.reload(folder);
-                if (PlaylistManager.Companion.hasMedia()) {
-                    WorkersKt.runOnMainThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (mediaPaths.isEmpty()) cancel.run();
-                            //TODO
-//                            else {
-//                                for (String path : mediaPaths)
-//                                    mService.removeLocation(path);
-//                            }
-                        }
-                    });
-                }
+                for (String folder : foldersToReload) mMediaLibrary.reload(folder);
             }
         });
     }
 
     @Override
     public void onClick(View v) {
-        MediaUtils.openArray(this, mPlaylist.getTracks(), 0);
+        MediaUtils.INSTANCE.playTracks(this, mPlaylist, 0);
     }
 
     private void removeFromPlaylist(final List<MediaWrapper> list){
-        for (MediaLibraryItem mediaItem : list) tracksModel.remove(mediaItem);
-        UiTools.snackerWithCancel(mBinding.getRoot(), getString(R.string.file_deleted), new Runnable() {
+        UiTools.snackerConfirm(mBinding.getRoot(), getString(R.string.confirm_remove_from_playlist_anonymous), new Runnable() {
             @Override
             public void run() {
                 for (MediaLibraryItem mediaItem : list) ((Playlist) mPlaylist).remove(mediaItem.getId());
-                if (mPlaylist.getTracks().length == 0) ((Playlist) mPlaylist).delete();
-            }
-        }, new Runnable() {
-            @Override
-            public void run() {
-                tracksModel.refresh();
             }
         });
     }

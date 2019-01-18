@@ -20,12 +20,14 @@
 
 package org.videolan.vlc.gui.video.benchmark;
 
+import android.Manifest;
 import android.annotation.TargetApi;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
-import android.graphics.Point;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
 import android.media.ImageReader;
@@ -34,19 +36,24 @@ import android.media.projection.MediaProjectionManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 
 import org.videolan.libvlc.Media;
 import org.videolan.libvlc.MediaPlayer;
+import org.videolan.vlc.PlaybackService;
+import org.videolan.vlc.util.Settings;
+import org.videolan.vlc.util.VLCInstance;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.ByteBuffer;
+import java.nio.Buffer;
 import java.util.List;
 
 /**
@@ -64,18 +71,23 @@ import java.util.List;
 
 public class BenchActivity extends ShallowVideoPlayer {
 
-    private static final String SCREENSHOTS = "org.videolan.vlc.gui.video.benchmark.ACTION_SCREENSHOTS";
-    private static final String PLAYBACK = "org.videolan.vlc.gui.video.benchmark.ACTION_PLAYBACK";
+    private static final String EXTRA_TIMESTAMPS = "extra_benchmark_timestamps";
+    private static final String EXTRA_ACTION_QUALITY = "extra_benchmark_action_quality";
+    private static final String EXTRA_ACTION_PLAYBACK = "extra_benchmark_action_playback";
+    private static final String EXTRA_SCREENSHOT_DIR = "extra_benchmark_screenshot_dir";
+    private static final String EXTRA_ACTION = "extra_benchmark_action";
+    private static final String EXTRA_HARDWARE = "extra_benchmark_disable_hardware";
+    public static final String EXTRA_BENCHMARK = "extra_benchmark";
 
-    private static final String TIMESTAMPS = "org.videolan.vlc.gui.video.benchmark.TIMESTAMPS";
-    private static final String INTENT_SCREENSHOT_DIR = "SCREENSHOT_DIR";
     private static final String TAG = "VLCBenchmark";
     private static final int REQUEST_SCREENSHOT = 666;
 
-    private static final int RESULT_FAILED = 0;
+    private static final int RESULT_FAILED = 6;
     private static final int RESULT_NO_HW = 1;
 
     private static final int VIRTUAL_DISPLAY_FLAGS = 0;
+
+    private static final int PERMISSION_REQUEST_WRITE = 1;
 
     private Runnable mTimeOut = null;
 
@@ -104,6 +116,33 @@ public class BenchActivity extends ShallowVideoPlayer {
     private boolean mHasVout = false;
     /* screenshot directory location */
     private String screenshotDir;
+    /* bool to wait in pause for user permission */
+    private boolean mWritePermission = false;
+
+    /* android_display vout is forced on hardware tests */
+    /* this option is set using the opengl sharedPref */
+    /* Saves the original value to reset it after the benchmark */
+    private String mOldOpenglValue = "-2";
+
+    /* Used to determine when a playback is stuck */
+    private float mPosition = 0;
+    private int mPositionCounter = 0;
+
+
+    @Override
+    public void onConnected(PlaybackService service) {
+        /* Changing preference to set the android_display vout on hardware benchmarks */
+        super.onConnected(service);
+        if (mIsHardware && mService != null) {
+            final SharedPreferences sharedPref = Settings.INSTANCE.getInstance(this);
+            mOldOpenglValue = sharedPref.getString("opengl", "-1");
+            final SharedPreferences.Editor editor = sharedPref.edit();
+            editor.putString("opengl", "0");
+            editor.commit();
+            VLCInstance.restart();
+            mService.restartMediaPlayer();
+        }
+    }
 
     @Override
     protected void loadMedia() {
@@ -117,47 +156,111 @@ public class BenchActivity extends ShallowVideoPlayer {
     }
 
     @Override
+    final public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // checking for permission other than granted
+        if ((requestCode == PERMISSION_REQUEST_WRITE) &&
+                grantResults.length >= 1 && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+            errorFinish("Failed to get write permission for screenshots");
+        } else if ((requestCode == PERMISSION_REQUEST_WRITE) && grantResults.length >= 1) {
+            mWritePermission = true;
+            if (mIsScreenshot) {
+                /* Temporizing for the authorisation popup to disappear */
+                mHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        seekScreenshot();
+                    }
+                }, 1000);
+            }
+        }
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         /* Crash handler setup */
         StartActivityOnCrash.setUp(this);
 
         Intent intent = getIntent();
+
         /* Enabling hardware mode if necessary*/
         /* Stops the hardware decoder falling back to software */
-        if (!intent.hasExtra("disable_hardware")) {
-            mIsHardware = true;
-        }
+        mIsHardware = !intent.getBooleanExtra(EXTRA_HARDWARE, true);
         mIsBenchmark = true;
-
-        if (!intent.hasExtra(INTENT_SCREENSHOT_DIR)) {
-            errorFinish("Failed to get screenshot directory location");
-        }
-        screenshotDir = intent.getStringExtra(INTENT_SCREENSHOT_DIR);
 
         super.onCreate(savedInstanceState);
 
         /* Determining the benchmark mode */
-        switch (intent.getAction()) {
-            case PLAYBACK:
+        if (!intent.hasExtra(EXTRA_ACTION)) {
+            errorFinish("Missing action intent extra");
+            return;
+        }
+        switch (intent.getStringExtra(EXTRA_ACTION)) {
+            case EXTRA_ACTION_PLAYBACK:
                 break;
-            case SCREENSHOTS:
-                mIsScreenshot = intent.hasExtra(TIMESTAMPS);
+            case EXTRA_ACTION_QUALITY:
+                if (!intent.hasExtra(EXTRA_SCREENSHOT_DIR)) {
+                    errorFinish("Failed to get screenshot directory location");
+                    return;
+                }
+                screenshotDir = intent.getStringExtra(EXTRA_SCREENSHOT_DIR);
+                mIsScreenshot = intent.hasExtra(EXTRA_TIMESTAMPS);
                 if (!mIsScreenshot) {
                     errorFinish("Missing screenshots timestamps");
+                    return;
                 }
-                if (intent.getSerializableExtra(TIMESTAMPS) instanceof List) {
-                    mTimestamp = (List<Long>) intent.getSerializableExtra(TIMESTAMPS);
+                if (intent.getSerializableExtra(EXTRA_TIMESTAMPS) instanceof List) {
+                    mTimestamp = (List<Long>) intent.getSerializableExtra(EXTRA_TIMESTAMPS);
                 } else {
                     errorFinish("Failed to get timestamps");
+                    return;
                 }
 
                 /* Deactivates secondary displays */
                 mEnableCloneMode = true;
                 mDisplayManager.release();
+                break;
         }
 
         // blocking display in landscape orientation
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        // Minimum apk for benchmark is 21, so this warning is a non-issue
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+
+        // Check for write permission, if false will ask
+        // for them after asking for screenshot permission
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
+            mWritePermission = false;
+        else
+            mWritePermission = true;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        setTimeout();
+    }
+
+    /**
+     * On some weak devices, the hardware decoder will end up hung.
+     * To avoid stopping the benchmark, a timeout is set to stop vlc
+     * and return to the benchmark for the next test.
+     */
+    private void setTimeout() {
+        if (mSetup && mHandler != null) {
+            if (mTimeOut != null) {
+                mHandler.removeCallbacks(mTimeOut);
+                mTimeOut = null;
+            }
+            mTimeOut = new Runnable() {
+                @Override
+                public void run() {
+                    Log.e(TAG, "VLC Seek Froze" );
+                    errorFinish("VLC Seek Froze");
+                }
+            };
+            mHandler.postDelayed(mTimeOut, 10000);
+        }
     }
 
     /**
@@ -180,6 +283,23 @@ public class BenchActivity extends ShallowVideoPlayer {
         switch (event.type) {
             case MediaPlayer.Event.Vout:
                 mHasVout = true;
+                break;
+            case MediaPlayer.Event.TimeChanged:
+                setTimeout();
+                break;
+            case MediaPlayer.Event.PositionChanged:
+                float pos = event.getPositionChanged();
+                if (!mIsScreenshot) {
+                    if (pos != mPosition) {
+                        mPosition = pos;
+                        mPositionCounter = 0;
+                    } else if (mPositionCounter > 50){
+                        errorFinish("VLC Playback Froze");
+                    } else {
+                        mPositionCounter += 1;
+                    }
+                }
+                break;
             case MediaPlayer.Event.Buffering:
                 if (event.getBuffering() == 100f) {
                     /* initial setup that has to be done when the video
@@ -188,12 +308,10 @@ public class BenchActivity extends ShallowVideoPlayer {
                         mSetup = true;
                         if (mIsScreenshot) {
                             mService.pause();
-                            Point size = new Point();
-                            getWindowManager().getDefaultDisplay().getSize(size);
-                            mWidth = size.x;
-                            mHeight = size.y;
                             DisplayMetrics metrics = new DisplayMetrics();
-                            getWindowManager().getDefaultDisplay().getMetrics(metrics);
+                            getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
+                            mWidth = metrics.widthPixels;
+                            mHeight = metrics.heightPixels;
                             mDensity = metrics.densityDpi;
                             mProjectionManager =
                                     (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
@@ -211,13 +329,7 @@ public class BenchActivity extends ShallowVideoPlayer {
                     /* Screenshot callback setup */
                     if (mIsScreenshot && mSetup && mScreenshotNumber < mTimestamp.size() && mSeeking) {
                         mSeeking = false;
-                        /* deactivating timeout*/
-                        if (mTimeOut != null) {
-                            mHandler.removeCallbacks(mTimeOut);
-                            mTimeOut = null;
-                        }
                         mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 2);
-
                         mVirtualDisplay =
                                 mMediaProjection.createVirtualDisplay("testScreenshot", mWidth,
                                         mHeight, mDensity, VIRTUAL_DISPLAY_FLAGS,
@@ -245,15 +357,8 @@ public class BenchActivity extends ShallowVideoPlayer {
      */
     private void seekScreenshot() {
         if (mProjectionManager != null && mScreenshotCount < mTimestamp.size()) {
+            setTimeout();
             seek(mTimestamp.get(mScreenshotCount));
-            /* Setting a timeout system */
-            mTimeOut = new Runnable() {
-                @Override
-                public void run() {
-                    errorFinish("Seek froze");
-                }
-            };
-            mHandler.postDelayed(mTimeOut, 5000);
             ++mScreenshotCount;
             mSeeking = true;
         } else {
@@ -270,6 +375,7 @@ public class BenchActivity extends ShallowVideoPlayer {
      * @param resultCode  activity result code
      * @param resultData  activity result data
      */
+    @Override
     @TargetApi(21)
     public void onActivityResult(int requestCode, int resultCode, Intent resultData) {
         if (requestCode == REQUEST_SCREENSHOT && resultData != null && resultCode == RESULT_OK) {
@@ -284,14 +390,17 @@ public class BenchActivity extends ShallowVideoPlayer {
             if (mMediaProjection == null) {
                 errorFinish("Failed to create MediaProjection");
             }
-
-            /* Temporizing for the authorisation popup to disappear */
-            mHandler.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    seekScreenshot();
-                }
-            }, 1000);
+            if (mWritePermission) {
+                /* Temporizing for the authorisation popup to disappear */
+                mHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        seekScreenshot();
+                    }
+                }, 1000);
+            } else {
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, PERMISSION_REQUEST_WRITE);
+            }
         } else {
             errorFinish("Failed to get screenshot permission");
         }
@@ -316,6 +425,7 @@ public class BenchActivity extends ShallowVideoPlayer {
      * @param resultString error description for display in VLCBenchmark
      */
     private void errorFinish(String resultString) {
+        Log.e(TAG, "errorFinish: " + resultString);
         Intent sendIntent = new Intent();
         sendIntent.putExtra("Error", resultString);
         setResult(RESULT_FAILED, sendIntent);
@@ -329,17 +439,24 @@ public class BenchActivity extends ShallowVideoPlayer {
         int counter = 0;
 
         try {
-            Process process = Runtime.getRuntime().exec("logcat -d");
+            int pid = android.os.Process.myPid();
+            /*Displays priority, tag, and PID of the process issuing the message from this pid*/
+            Process process = Runtime.getRuntime().exec("logcat -d -v brief --pid=" + pid);
             BufferedReader bufferedReader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()));
             String line;
             while ((line = bufferedReader.readLine()) != null) {
-                if (line.contains("W VLC") || line.contains("E VLC")) {
+                if (line.contains("W/") || line.contains("E/")) {
                     if (line.contains(" late ")) {
                         counter += 1;
                     }
                 }
             }
+            /* Clear logs, so that next test is not polluted by current one */
+            new ProcessBuilder()
+            .command("logcat", "-c")
+            .redirectErrorStream(true)
+            .start();
         } catch (IOException ex) {
             Log.e(TAG, ex.toString());
         }
@@ -353,6 +470,14 @@ public class BenchActivity extends ShallowVideoPlayer {
     @Override
     @TargetApi(21)
     public void finish() {
+        /* Resetting vout preference to it value before the benchmark */
+        if (mIsHardware && !mOldOpenglValue.equals("-2")) {
+            final SharedPreferences sharedPref = Settings.INSTANCE.getInstance(this);
+            final SharedPreferences.Editor editor= sharedPref.edit();
+            editor.putString("opengl", mOldOpenglValue);
+            editor.commit();
+            VLCInstance.restart();
+        }
         /* Case of error in VideoPlayerActivity, then finish is not overridden */
         if (mVLCFailed) {
             super.finish();
@@ -393,6 +518,9 @@ public class BenchActivity extends ShallowVideoPlayer {
         if (mMediaProjection != null) {
             mMediaProjection.stop();
         }
+        if (mTimeOut != null && mHandler != null) {
+            mHandler.removeCallbacks(mTimeOut);
+        }
         super.onDestroy();
     }
 
@@ -420,7 +548,7 @@ public class BenchActivity extends ShallowVideoPlayer {
                     }
                     if (image != null) {
                         Image.Plane[] planes = image.getPlanes();
-                        ByteBuffer buffer = planes[0].getBuffer();
+                        Buffer buffer = planes[0].getBuffer().rewind();
                         int pixelStride = planes[0].getPixelStride();
                         int rowStride = planes[0].getRowStride();
                         int rowPadding = rowStride - pixelStride * mWidth;
@@ -429,7 +557,6 @@ public class BenchActivity extends ShallowVideoPlayer {
                                 Bitmap.Config.ARGB_8888);
                         if (bitmap != null) {
                             bitmap.copyPixelsFromBuffer(buffer);
-
                             File folder = new File(screenshotDir);
 
                             if (!folder.exists()) {
@@ -437,9 +564,7 @@ public class BenchActivity extends ShallowVideoPlayer {
                                     errorFinish("Failed to create screenshot directory");
                                 }
                             }
-
-                            //File imageFile = new File(getExternalFilesDir(null), "Screenshot_" + sScreenshotNumber + ".jpg");
-                            File imageFile = new File(folder.getAbsolutePath() + File.separator + "Screenshot_" + mScreenshotNumber + ".jpg");
+                            File imageFile = new File(folder.getAbsolutePath() + File.separator + "Screenshot_" + mScreenshotNumber + ".png");
                             mScreenshotNumber += 1;
                             try {
                                 outputStream = new FileOutputStream(imageFile);
@@ -447,7 +572,7 @@ public class BenchActivity extends ShallowVideoPlayer {
                                 Log.e(TAG, "Failed to create outputStream");
                             }
                             if (outputStream != null) {
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
                             }
 
                             bitmap.recycle();

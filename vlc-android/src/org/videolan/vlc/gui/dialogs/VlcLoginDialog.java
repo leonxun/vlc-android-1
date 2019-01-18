@@ -28,19 +28,18 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v4.content.LocalBroadcastManager;
-import android.support.v7.preference.PreferenceManager;
+import androidx.annotation.Nullable;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import android.view.View;
 import android.widget.EditText;
 
 import org.videolan.libvlc.Dialog;
 import org.videolan.vlc.R;
-import org.videolan.vlc.VLCApplication;
 import org.videolan.vlc.databinding.VlcLoginDialogBinding;
 import org.videolan.vlc.gui.helpers.UiTools;
 import org.videolan.vlc.gui.preferences.PreferencesActivity;
 import org.videolan.vlc.util.AndroidDevices;
+import org.videolan.vlc.util.Settings;
 
 public class VlcLoginDialog extends VlcDialog<Dialog.LoginDialog, VlcLoginDialogBinding> implements View.OnFocusChangeListener {
 
@@ -55,7 +54,7 @@ public class VlcLoginDialog extends VlcDialog<Dialog.LoginDialog, VlcLoginDialog
     @Override
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        if (VLCApplication.showTvUi() && !AndroidDevices.hasPlayServices) {
+        if (AndroidDevices.showTvUi(view.getContext()) && !AndroidDevices.hasPlayServices) {
             mBinding.login.setOnFocusChangeListener(this);
             mBinding.password.setOnFocusChangeListener(this);
         }
@@ -65,7 +64,7 @@ public class VlcLoginDialog extends VlcDialog<Dialog.LoginDialog, VlcLoginDialog
     @Override
     public void onAttach(Context context) {
         super.onAttach(context);
-        mSettings = PreferenceManager.getDefaultSharedPreferences(context);
+        mSettings = Settings.INSTANCE.getInstance(context);
     }
 
     public void onLogin(View v) {
@@ -81,13 +80,12 @@ public class VlcLoginDialog extends VlcDialog<Dialog.LoginDialog, VlcLoginDialog
 
     @Override
     public void onFocusChange(final View v, boolean hasFocus) {
-        if (hasFocus)
-            UiTools.setKeyboardVisibility(v, v instanceof EditText);
+        if (hasFocus) UiTools.setKeyboardVisibility(v, v instanceof EditText);
     }
 
     @Override
     public void onDestroy() {
-        LocalBroadcastManager.getInstance(VLCApplication.getAppContext()).sendBroadcast(new Intent(ACTION_DIALOG_CANCELED));
+        LocalBroadcastManager.getInstance(requireContext()).sendBroadcast(new Intent(ACTION_DIALOG_CANCELED));
         super.onDestroy();
     }
 }

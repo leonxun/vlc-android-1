@@ -20,51 +20,61 @@
 
 package org.videolan.vlc.viewmodels
 
-import android.arch.lifecycle.Observer
-import android.arch.lifecycle.ViewModel
-import android.arch.lifecycle.ViewModelProvider
-import android.arch.lifecycle.ViewModelProviders
-import android.support.v4.app.Fragment
-import kotlinx.coroutines.experimental.withContext
+import android.content.Context
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.Observer
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProviders
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import org.videolan.medialibrary.Medialibrary
-import org.videolan.medialibrary.interfaces.MediaAddedCb
+import org.videolan.medialibrary.media.Folder
 import org.videolan.medialibrary.media.MediaWrapper
 import org.videolan.vlc.R
-import org.videolan.vlc.VLCApplication
 import org.videolan.vlc.media.MediaGroup
-import org.videolan.vlc.util.Util
-import org.videolan.vlc.util.VLCIO
+import org.videolan.vlc.media.getAll
+import org.videolan.vlc.util.Settings
 
-open class VideosModel(private val group: String?, private val minGroupLen: Int, customSort : Int) : MedialibraryModel<MediaWrapper>(), MediaAddedCb {
+@ExperimentalCoroutinesApi
+open class VideosModel(context: Context, private val group: String?, val folder : Folder?, private val minGroupLen: Int, customSort : Int, customDesc: Boolean?) : MedialibraryModel<MediaWrapper>(context), Medialibrary.MediaCb {
 
     override val sortKey = "${super.sortKey}_$group"
     override fun canSortByFileNameName() = true
     override fun canSortByDuration() = true
     override fun canSortByLastModified() = true
-    private val res by lazy { VLCApplication.getAppResources() }
 
-    private val thumbObs = Observer<MediaWrapper> { media -> updateActor.offer(MediaUpdate(listOf(media!!))) }
+    private val thumbObs = Observer<MediaWrapper> { media -> if (!updateActor.isClosedForSend) updateActor.offer(MediaUpdate(listOf(media!!))) }
 
     init {
         sort = if (customSort != Medialibrary.SORT_DEFAULT) customSort
-        else VLCApplication.getSettings().getInt(sortKey, Medialibrary.SORT_ALPHA)
-        desc = VLCApplication.getSettings().getBoolean(sortKey+"_desc", false)
+        else Settings.getInstance(context).getInt(sortKey, Medialibrary.SORT_ALPHA)
+        desc = customDesc ?: Settings.getInstance(context).getBoolean(sortKey+"_desc", false)
         Medialibrary.lastThumb.observeForever(thumbObs)
     }
 
-    override fun onMediaAdded(mediaList: Array<out MediaWrapper>?) {
-        if (!Util.isArrayEmpty<MediaWrapper>(mediaList)) updateActor.offer(MediaListAddition(mediaList!!.filter { it.type == MediaWrapper.TYPE_VIDEO }))
+    override fun onMediaAdded() {
+        refresh()
     }
 
-    override fun onMediaUpdated(mediaList: Array<out MediaWrapper>?) {
-        if (!Util.isArrayEmpty<MediaWrapper>(mediaList)) updateActor.offer(MediaUpdate(mediaList!!.filter { it.type == MediaWrapper.TYPE_VIDEO }))
+    override fun onMediaModified() {
+        refresh()
+    }
+
+    override fun onMediaDeleted() {
+        refresh()
     }
 
     override suspend fun updateList() {
-        dataset.value = withContext(VLCIO) {
+        if (!isActive) return
+        dataset.value = withContext(Dispatchers.IO) {
+            if (!isActive) return@withContext mutableListOf<MediaWrapper>()
             val list = medialibrary.getVideos(sort, desc)
             val displayList = mutableListOf<MediaWrapper>()
             when {
+                folder != null -> displayList.addAll(folder.getAll(Folder.TYPE_FOLDER_VIDEO, sort, desc))
                 group !== null -> {
                     val loGroup = group.toLowerCase()
                     for (item in list) {
@@ -72,8 +82,8 @@ open class VideosModel(private val group: String?, private val minGroupLen: Int,
                         if (title.startsWith(loGroup)) displayList.add(item)
                     }
                 }
-                minGroupLen > 0 -> MediaGroup.group(list, minGroupLen).mapTo(displayList) {
-                    if (it.size() > 1 && res !== null) { it.description = res.getQuantityString(R.plurals.videos_quantity, it.size(), it.size()) }
+                minGroupLen > 0 -> MediaGroup.group(list, minGroupLen, sort == Medialibrary.SORT_FILENAME).mapTo(displayList) {
+                    if (it.size() > 1) { it.description = context.resources.getQuantityString(R.plurals.videos_quantity, it.size(), it.size()) }
                     it.media
                 }
                 else -> displayList.addAll(list)
@@ -84,27 +94,56 @@ open class VideosModel(private val group: String?, private val minGroupLen: Int,
 
     override fun onMedialibraryReady() {
         super.onMedialibraryReady()
-        medialibrary.setMediaUpdatedCb(this, Medialibrary.FLAG_MEDIA_UPDATED_VIDEO)
-        medialibrary.setMediaAddedCb(this, Medialibrary.FLAG_MEDIA_ADDED_VIDEO)
+        medialibrary.addMediaCb(this)
     }
 
     override fun onCleared() {
-        super.onCleared()
-        medialibrary.removeMediaAddedCb()
-        medialibrary.removeMediaUpdatedCb()
+        medialibrary.removeMediaCb(this)
         Medialibrary.lastThumb.removeObserver(thumbObs)
+        super.onCleared()
     }
 
-    class Factory(val group: String?, private val minGroupLen : Int, private val sort : Int): ViewModelProvider.NewInstanceFactory() {
+    fun getListWithPosition(list: MutableList<MediaWrapper>, position: Int): Int {
+        if (group != null || minGroupLen <= 0) {
+            list.addAll(dataset.value)
+            return position
+        }
+        var offset = 0
+        for ((i, mw) in dataset.value.withIndex()) {
+            if (mw is MediaGroup) {
+                for (item in mw.all) list.add(item)
+                if (i < position) offset += mw.size() - 1
+            } else list.add(mw)
+        }
+        return position + offset
+    }
+
+    class Factory(
+            private val context: Context,
+            val group: String?,
+            private val folder : Folder?,
+            private val minGroupLen : Int,
+            private val sort : Int,
+            private val desc : Boolean?
+    ): ViewModelProvider.NewInstanceFactory() {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            val length = if (minGroupLen == 0) Integer.valueOf(Settings.getInstance(context).getString("video_min_group_length", "6")!!) else minGroupLen
             @Suppress("UNCHECKED_CAST")
-            return VideosModel(group, minGroupLen, sort) as T
+            return VideosModel(context.applicationContext, group, folder, length, sort, desc) as T
         }
     }
 
     companion object {
-        fun get(fragment: Fragment, group: String?, minGroupLen : Int, sort : Int) : VideosModel {
-            return ViewModelProviders.of(fragment, Factory(group, minGroupLen, sort)).get(VideosModel::class.java)
+        fun get(
+                context: Context,
+                fragment: Fragment,
+                sort : Int = Medialibrary.SORT_DEFAULT,
+                minGroupLen : Int = 0,
+                desc : Boolean? = null,
+                group: String? = null,
+                folder: Folder? = null
+        ) : VideosModel {
+            return ViewModelProviders.of(fragment, Factory(context, group, folder, minGroupLen, sort, desc)).get(VideosModel::class.java)
         }
     }
 }

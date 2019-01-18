@@ -1,10 +1,10 @@
 <resources>
     <dimen name="shadow_width">6px</dimen>
     <dimen name="widget_margin">0dp</dimen>
-    <dimen name="audio_browser_item_size">50dp</dimen>
+    <dimen name="audio_browser_item_size">48dp</dimen>
     <dimen name="directory_browser_item_size">40dp</dimen>
-    <dimen name="listview_bottom_padding">10dp</dimen>
-    <dimen name="listview_side_padding">5dp</dimen>
+    <dimen name="listview_bottom_padding">8dp</dimen>
+    <dimen name="listview_side_padding">4dp</dimen>
     <dimen name="grid_card_thumb_width">160dp</dimen>
     <dimen name="grid_card_thumb_height">100dp</dimen>
     <dimen name="tv_grid_card_thumb_width">192dp</dimen>
@@ -14,6 +14,7 @@
     <dimen name="grid_card_vertical_spacing">0dp</dimen>
     <dimen name="tab_layout_horizontal_padding">5dp</dimen>
     <dimen name="info_appbar_height">150dp</dimen>
+    <dimen name="audioplayer_controls_margin">0dp</dimen>
 
     <!-- Video Player -->
     <dimen name="overlay_padding_bottom">8dip</dimen>
@@ -46,7 +47,7 @@
     <dimen name="file_picker_height">-1px</dimen>
 
     <dimen name="default_content_width">-1px</dimen>
-    <dimen name="default_context_width">-1px</dimen>
+    <dimen name="default_context_width">512dp</dimen>
 
 
     <!-- Default -->
@@ -71,9 +72,20 @@
     <dimen name="fastscroller_track_height">30dp</dimen>
     <dimen name="fastscroller_track_width">6dp</dimen>
     <dimen name="fastscroller_track_padding">5dp</dimen>
-    <dimen name="audio_player_cover_margin">8dp</dimen>
+    <dimen name="audio_player_cover_margin">4dp</dimen>
     <dimen name="audio_player_elevation">16dp</dimen>
     <dimen name="progress_layout_height">24dp</dimen>
     <dimen name="dialog_sd_wisard_width">320dp</dimen>
     <dimen name="dialog_sd_wisard_height">420dp</dimen>
+
+    <!--MRLPanel-->
+    <dimen name="mrl_panel_min_width">320dp</dimen>
+
+    <!--Subtitle Downloader Dialog-->
+    <dimen name="subs_dl_dialog_width">320dp</dimen>
+    <dimen name="subs_dl_dialog_height">170dp</dimen>
+    <dimen name="player_option_width">224dp</dimen>
+
+    <dimen name="default_margin_plus_audio_margin">28dp</dimen>
+    <dimen name="audio_player_seekbar_bottom_margin">16dp</dimen>
 </resources>

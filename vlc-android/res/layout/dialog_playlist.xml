@@ -6,7 +6,7 @@
     android:padding="@dimen/default_margin">
 
     <!--TODO : textColorHint doesn't work -->
-    <android.support.design.widget.TextInputLayout
+    <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/dialog_playlist_name"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -19,32 +19,32 @@
             android:textColorHint="?attr/font_default"
             android:inputType="text"
             android:imeOptions="actionSend"/>
-    </android.support.design.widget.TextInputLayout>
+    </com.google.android.material.textfield.TextInputLayout>
     <Button
         android:id="@+id/dialog_playlist_cancel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@android:string/cancel"
         android:layout_below="@+id/dialog_playlist_name"
-        android:layout_toLeftOf="@+id/dialog_playlist_save"
-        tools:targetApi="11"
-        style="?android:attr/borderlessButtonStyle"/>
+        android:layout_toStartOf="@+id/dialog_playlist_save"
+        android:layout_marginEnd="8dp"
+        style="@style/Widget.MaterialComponents.Button.TextButton.Dialog" />
     <Button
         android:id="@+id/dialog_playlist_save"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_alignParentRight="true"
+        android:layout_alignParentEnd="true"
         android:text="@android:string/ok"
         android:layout_below="@+id/dialog_playlist_name"
-        tools:targetApi="11"
-        style="?android:attr/borderlessButtonStyle"/>
+        style="@style/Widget.MaterialComponents.Button.TextButton.Dialog" />
     <FrameLayout
         android:id="@+id/dialog_list_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/half_default_margin"
+        android:layout_marginStart="@dimen/half_default_margin"
         android:layout_below="@+id/dialog_playlist_cancel">
-        <android.support.v7.widget.RecyclerView
+        <androidx.recyclerview.widget.RecyclerView
             android:id="@android:id/list"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"/>

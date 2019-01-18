@@ -4,12 +4,12 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.support.design.widget.FloatingActionButton;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentActivity;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -31,7 +31,7 @@ import org.videolan.vlc.util.WeakHandler;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ExtensionBrowser extends Fragment implements View.OnClickListener, android.support.v4.widget.SwipeRefreshLayout.OnRefreshListener, CtxActionReceiver {
+public class ExtensionBrowser extends Fragment implements View.OnClickListener, androidx.swiperefreshlayout.widget.SwipeRefreshLayout.OnRefreshListener, CtxActionReceiver {
 
     public static final String TAG = "VLC/ExtensionBrowser";
 
@@ -77,6 +77,7 @@ public class ExtensionBrowser extends Fragment implements View.OnClickListener, 
         setHasOptionsMenu(true);
     }
 
+    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState){
         final View v = inflater.inflate(R.layout.directory_browser, container, false);
         mRecyclerView = v.findViewById(R.id.network_list);
@@ -180,15 +181,15 @@ public class ExtensionBrowser extends Fragment implements View.OnClickListener, 
                 final List<VLCExtensionItem> items = mAdapter.getAll();
                 final List<MediaWrapper> medias = new ArrayList<>(items.size());
                 for (VLCExtensionItem vlcItem : items) medias.add(Utils.mediawrapperFromExtension(vlcItem));
-                MediaUtils.openList(getActivity(), medias, position);
+                MediaUtils.INSTANCE.openList(getActivity(), medias, position);
                 break;
             case Constants.CTX_APPEND:
-                MediaUtils.appendMedia(getActivity(), Utils.mediawrapperFromExtension(mAdapter.getItem(position)));
+                MediaUtils.INSTANCE.appendMedia(getActivity(), Utils.mediawrapperFromExtension(mAdapter.getItem(position)));
                 break;
             case Constants.CTX_PLAY_AS_AUDIO:
                 final MediaWrapper mw = Utils.mediawrapperFromExtension(mAdapter.getItem(position));
                 mw.addFlags(MediaWrapper.MEDIA_FORCE_AUDIO);
-                MediaUtils.openMedia(getActivity(), mw);
+                MediaUtils.INSTANCE.openMedia(getActivity(), mw);
                 break;
             case Constants.CTX_ITEM_DL:
                 //TODO

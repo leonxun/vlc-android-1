@@ -24,18 +24,9 @@
 package org.videolan.vlc.gui.tv.browser;
 
 import android.annotation.TargetApi;
-import android.arch.lifecycle.Observer;
-import android.arch.lifecycle.ViewModelProviders;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v17.leanback.widget.OnItemViewClickedListener;
-import android.support.v17.leanback.widget.OnItemViewSelectedListener;
-import android.support.v17.leanback.widget.Presenter;
-import android.support.v17.leanback.widget.Row;
-import android.support.v17.leanback.widget.RowPresenter;
-import android.support.v7.preference.PreferenceManager;
 
 import org.videolan.medialibrary.media.MediaLibraryItem;
 import org.videolan.medialibrary.media.MediaWrapper;
@@ -46,42 +37,55 @@ import org.videolan.vlc.gui.tv.TvUtil;
 import org.videolan.vlc.gui.tv.browser.interfaces.BrowserActivityInterface;
 import org.videolan.vlc.gui.tv.browser.interfaces.DetailsFragment;
 import org.videolan.vlc.util.Constants;
+import org.videolan.vlc.util.Settings;
 import org.videolan.vlc.viewmodels.browser.NetworkModel;
 
 import java.util.List;
+
+import androidx.annotation.Nullable;
+import androidx.leanback.widget.OnItemViewClickedListener;
+import androidx.leanback.widget.OnItemViewSelectedListener;
+import androidx.leanback.widget.Presenter;
+import androidx.leanback.widget.Row;
+import androidx.leanback.widget.RowPresenter;
+import androidx.lifecycle.Observer;
+import androidx.lifecycle.ViewModelProviders;
 
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
 public class BrowserGridFragment extends GridFragment implements OnItemViewSelectedListener, OnItemViewClickedListener, DetailsFragment {
 
     private MediaWrapper mItemSelected;
     private NetworkModel provider;
-    protected boolean mShowHiddenFiles;
 
+    @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setOnItemViewSelectedListener(this);
-        setOnItemViewClickedListener(this); mShowHiddenFiles = PreferenceManager.getDefaultSharedPreferences(requireContext()).getBoolean("browser_show_hidden_files", false);
-        provider = ViewModelProviders.of(this, new NetworkModel.Factory(null, mShowHiddenFiles)).get(NetworkModel.class);
+        setOnItemViewClickedListener(this);
+        final boolean showHiddenFiles = Settings.INSTANCE.getInstance(requireContext()).getBoolean("browser_show_hidden_files", false);
+        provider = ViewModelProviders.of(this, new NetworkModel.Factory(requireContext(), null, showHiddenFiles)).get(NetworkModel.class);
         provider.getDataset().observe(this, new Observer<List<MediaLibraryItem>>() {
             @Override
             public void onChanged(@Nullable List<MediaLibraryItem> mediaLibraryItems) {
                 mAdapter.setItems(mediaLibraryItems, TvUtil.INSTANCE.getDiffCallback());
             }
         });
-        ExternalMonitor.connected.observe(this, new Observer<Boolean>() {
+        ExternalMonitor.INSTANCE.getConnected().observe(this, new Observer<Boolean>() {
             @Override
             public void onChanged(@Nullable Boolean connected) {
-                if (connected) provider.refresh();
+                if (connected != null && connected) provider.refresh();
                 //TODO empty/disconnected view
             }
         });
     }
 
+    @Override
     public void onPause() {
         super.onPause();
         ((BrowserActivityInterface)mContext).updateEmptyView(false);
     }
 
+    @Override
     public void showDetails() {
         if (mItemSelected.getType() == MediaWrapper.TYPE_DIR) {
             final Intent intent = new Intent(getActivity(), DetailsActivity.class);
@@ -103,8 +107,8 @@ public class BrowserGridFragment extends GridFragment implements OnItemViewSelec
     public void onItemClicked(Presenter.ViewHolder itemViewHolder, Object item, RowPresenter.ViewHolder rowViewHolder, Row row) {
         MediaWrapper media = (MediaWrapper) item;
         if (media.getType() == MediaWrapper.TYPE_DIR)
-            TvUtil.INSTANCE.browseFolder(getActivity(), Constants.HEADER_NETWORK, ((MediaWrapper) item).getUri());
+            TvUtil.INSTANCE.browseFolder(requireActivity(), Constants.HEADER_NETWORK, ((MediaWrapper) item).getUri());
         else
-            TvUtil.INSTANCE.openMedia(getActivity(), item, null);
+            TvUtil.INSTANCE.openMedia(requireActivity(), item, null);
     }
 }
